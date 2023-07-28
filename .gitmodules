@@ -1,0 +1,9 @@
+[submodule "thirdparties/senders-io"]
+	path = thirdparties/senders-io
+	url = git@github.com:maikel/senders-io.git
+[submodule "thirdparties/stdexec"]
+	path = thirdparties/stdexec
+	url = git@github.com:maikel/stdexec.git
+[submodule "thirdparties/fmt"]
+	path = thirdparties/fmt
+	url = git@github.com:fmtlib/fmt.git
