@@ -3,9 +3,16 @@ Checks: '
   -llvm*,
   -fuchsia*,
   -altera*,
-  -hicpp*
+  -hicpp*,
 
-  -modernize-use-trailing-return-type
+  -modernize-use-trailing-return-type,
+
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-constant-array-index
+  
+  -readability-magic-numbers,
+  -readability-identifier-length
 '
 WarningsAsErrors: '*'
 

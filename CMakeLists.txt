@@ -1,64 +1,47 @@
 cmake_minimum_required(VERSION 3.22)
 
 # Project properties.
-set(PROJECT_VERSION_MAJOR 0)
-set(PROJECT_VERSION_MINOR 1)
-project(networking VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}" LANGUAGES CXX)
-message(STATUS "building networking version: " ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
-
-# Cpp standard.
+project(networking VERSION "0.1" LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+message(STATUS "building networking......" )
 
 # Set path for source files.
-set(INCLUDE_PATH        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+set(SOURCE_PATH         ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(THIRDPARTIES_PATH   ${CMAKE_CURRENT_SOURCE_DIR}/thirdparties)
 set(TESTS_PATH          ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 set(EXAMPLES_PATH       ${CMAKE_CURRENT_SOURCE_DIR}/examples)
-message(STATUS "include      path: "  ${INCLUDE_PATH})
-message(STATUS "thirdparties path: "  ${THIRDPARTIES_PATH})
-message(STATUS "unittests    path: "  ${TESTS_PATH})
-message(STATUS "examples     path: "  ${EXAMPLES_PATH})
 
 # Include necessary directoires.
-include_directories(${INCLUDE_PATH}/)
-include_directories(${THIRDPARTY_PATH}/stdexec/include/)
-include_directories(${THIRDPARTY_PATH}/sources/include/)
+include_directories(${SOURCE_PATH}/)
 
-# Autodetect platform
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-	message(STATUS "Configuring for Linux")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-	message(STATUS "Configuring for macOS")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-	message(STATUS "Configuring for Windows")
-else()
-	message(STATUS "Configuring on/for ${CMAKE_SYSTEM_NAME}")
-endif()
-
-# Autodetect complier
-if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-    message(STATUS "using Clang compiler")
-elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
-    message(STATUS "using AppleClang compiler")
-elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    message(STATUS "using GCC compiler")
-elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-    message(STATUS "using MSVC compiler")
-else()
-    message(STATUS "!unknow compiler. ${CMAKE_CXX_COMPILER_ID}")
-endif()
-
-add_subdirectory(thirdparties/stdexec)
-
-# TODO: rework senders-io's cmakelists
+add_subdirectory(${THIRDPARTIES_PATH}/stdexec)
+# TODO: rework senders-io's cmakelist.txt
 set(stdexec_DIR ${CMAKE_SOURCE_DIR}/build/thirdparties/stdexec/)
+add_subdirectory(${THIRDPARTIES_PATH}/senders-io)
+add_subdirectory(${THIRDPARTIES_PATH}/fmt)
+add_subdirectory(${THIRDPARTIES_PATH}/nlohmann-json)
+add_subdirectory(${THIRDPARTIES_PATH}/spdlog)
+add_subdirectory(${THIRDPARTIES_PATH}/magic_enum)
 
-add_subdirectory(thirdparties/senders-io)
-add_subdirectory(thirdparties/fmt)
+# find source files
+file (GLOB_RECURSE SOURCE_LIST ${SOURCE_PATH}/*.cpp)
+add_executable(${PROJECT_NAME} ${SOURCE_LIST})
 
-add_executable(networking main.cpp)
-target_link_libraries(networking PUBLIC STDEXEC::stdexec sio::sio fmt::fmt)
+target_link_libraries(${PROJECT_NAME} PUBLIC STDEXEC::stdexec 
+                                             sio::sio 
+                                             fmt::fmt
+                                             nlohmann_json::nlohmann_json
+                                             spdlog::spdlog
+                                             magic_enum::magic_enum)
+
+option(BUILD_NETWORING_TEST "build networking test" ON)
+if (BUILD_NETWORING_TEST)
+    message(STATUS "building networing unittest...")
+    # stdexec also use Catch2
+    find_package(Catch2 REQUIRED)
+    add_subdirectory(${TESTS_PATH})
+endif()
 
 

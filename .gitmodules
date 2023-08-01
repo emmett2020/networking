@@ -7,3 +7,15 @@
 [submodule "thirdparties/fmt"]
 	path = thirdparties/fmt
 	url = git@github.com:fmtlib/fmt.git
+[submodule "thirdparties/magic_enum"]
+	path = thirdparties/magic_enum
+	url = https://github.com/Neargye/magic_enum.git
+[submodule "thirdparties/spdlog"]
+	path = thirdparties/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "thirdparties/nlohmann-json"]
+	path = thirdparties/nlohmann-json
+	url = https://github.com/nlohmann/json.git
+[submodule "thirdparties/catch2"]
+	path = thirdparties/catch2
+	url = git@github.com:catchorg/Catch2.git
