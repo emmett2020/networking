@@ -21,7 +21,8 @@
 namespace net::http {
 // Error codes returned from HTTP algorithms and operations.
 enum class Error {
-  kEndOfStream = 1,
+  kSuccess = 0,
+  kEndOfStream,
   kPartialMessage,
   kNeedMore,
   kUnexpectedBody,
@@ -33,12 +34,19 @@ enum class Error {
   kBadAlloc,
   kBadLineEnding,
   kBadMethod,
-  kBadTarget,
+  kBadUri,
+  kBadScheme,
+  kBadHost,
+  kBadPort,
+  kBadPath,
+  kBadParams,
   kBadVersion,
   kBadStatus,
   kBadReason,
-  kBadField,
-  kBadValue,
+  kBadHeader,
+  kBadHeaderName,
+  kEmptyHeaderName,
+  kBadHeaderValue,
   kBadContentLength,
   kBadTransferEncoding,
   kBadChunk,
@@ -46,7 +54,7 @@ enum class Error {
   kBadObsFold,
   kMultipleContentLength,
   kStaleParser,
-  kShortRead
+  kShortRead,
 };
 
 class HttpErrorCategory : public std::error_category {
@@ -83,18 +91,32 @@ class HttpErrorCategory : public std::error_category {
         return "bad line ending";
       case Error::kBadMethod:
         return "bad method";
-      case Error::kBadTarget:
-        return "bad target";
+      case Error::kBadUri:
+        return "bad uri";
+      case Error::kBadScheme:
+        return "bad scheme";
+      case Error::kBadHost:
+        return "bad host";
+      case Error::kBadPort:
+        return "bad port";
+      case Error::kBadPath:
+        return "bad path";
+      case Error::kBadParams:
+        return "bad params";
       case Error::kBadVersion:
         return "bad version";
       case Error::kBadStatus:
         return "bad status";
       case Error::kBadReason:
         return "bad reason";
-      case Error::kBadField:
-        return "bad field";
-      case Error::kBadValue:
-        return "bad value";
+      case Error::kBadHeader:
+        return "bad header";
+      case Error::kEmptyHeaderName:
+        return "empty header name";
+      case Error::kBadHeaderName:
+        return "bad header name";
+      case Error::kBadHeaderValue:
+        return "bad header value";
       case Error::kBadContentLength:
         return "bad Content-Length";
       case Error::kBadTransferEncoding:
@@ -133,17 +155,17 @@ class HttpErrorCategory : public std::error_category {
   }
 };
 
+inline std::error_code make_error_code(net::http::Error err) {  // NOLINT
+  static net::http::HttpErrorCategory category{};
+  return {static_cast<std::underlying_type<net::http::Error>::type>(err),
+          category};
+}
+
 }  // namespace net::http
 
 namespace std {
-std::error_code make_error_code(net::http::Error err) {  // NOLINT
-  static net::http::HttpErrorCategory category{};
-  return std::error_code{
-      static_cast<std::underlying_type<net::http::Error>::type>(err), category};
-}
-
 template <>
-struct std::is_error_code_enum<net::http::Error> {
+struct is_error_code_enum<net::http::Error> {
   static bool const value = true;  // NOLINT
 };
 }  // namespace std

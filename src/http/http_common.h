@@ -17,6 +17,7 @@
 
 #include <array>
 #include <charconv>
+#include <cstring>
 #include <string>
 #include <string_view>
 
@@ -24,253 +25,272 @@
 
 namespace net::http {
 
-enum class Protocol {
-  kProtocolHttp,
-  kProtocolHttps,
-  kProtocolQuic,
-  kProtocolUnknown
-};
+enum class HttpScheme { kHttp, kHttps, kUnknown };
 
 static constexpr std::array<std::string_view, 5> kHttpVersions = {
-    "HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3", "UNKNOWN_VERSION"};
+    "HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3", "UNKNOWN_HTTP_VERSION"};
+
+enum class HttpVersion { kHttp10, kHttp11, kHttp20, kHttp30, kUnknown };
+
+constexpr HttpVersion ToHttpVersion(int total) {
+  if (total == 10) {
+    return HttpVersion::kHttp10;
+  }
+  if (total == 11) {
+    return HttpVersion::kHttp11;
+  }
+  if (total == 20) {
+    return HttpVersion::kHttp20;
+  }
+  if (total == 30) {
+    return HttpVersion::kHttp30;
+  }
+  return HttpVersion::kUnknown;
+}
+
+constexpr HttpVersion ToHttpVersion(int major, int minor) {
+  return ToHttpVersion(major * 10 + minor);
+}
 
 enum class HttpMethod {
-  kHttpMethodGet,
-  kHttpMethodHead,
-  kHttpMethodPost,
-  kHttpMethodPut,
-  kHttpMethodDelete,
-  kHttpMethodTrace,
-  kHttpMethodControl,
-  kHttpMethodPurge,
-  kHttpMethodOptions,
-  kHttpMethodUnknown
+  kGet,
+  kHead,
+  kPost,
+  kPut,
+  kDelete,
+  kTrace,
+  kControl,
+  kPurge,
+  kOptions,
+  kConnect,
+  kUnknown
 };
 
 constexpr std::string_view HttpMethodToString(HttpMethod method) noexcept {
   switch (method) {
-    case HttpMethod::kHttpMethodGet:
+    case HttpMethod::kGet:
       return "GET";
-    case HttpMethod::kHttpMethodHead:
+    case HttpMethod::kHead:
       return "HEAD";
-    case HttpMethod::kHttpMethodPost:
+    case HttpMethod::kPost:
       return "POST";
-    case HttpMethod::kHttpMethodPut:
+    case HttpMethod::kPut:
       return "PUT";
-    case HttpMethod::kHttpMethodDelete:
+    case HttpMethod::kDelete:
       return "DELETE";
-    case HttpMethod::kHttpMethodTrace:
+    case HttpMethod::kTrace:
       return "TRACE";
-    case HttpMethod::kHttpMethodControl:
+    case HttpMethod::kControl:
       return "CONTROL";
-    case HttpMethod::kHttpMethodPurge:
+    case HttpMethod::kPurge:
       return "PURGE";
-    case HttpMethod::kHttpMethodOptions:
+    case HttpMethod::kOptions:
       return "OPTIONS";
+    case HttpMethod::kConnect:
+      return "CONNECT";
     default:
       return "UNKNOWN";
   }
 }
 
-constexpr HttpMethod StringToHttpMethod(std::string_view method) noexcept {
+constexpr HttpMethod ToHttpMethod(std::string_view method) noexcept {
   if (method == "GET") {
-    return HttpMethod::kHttpMethodGet;
+    return HttpMethod::kGet;
   }
   if (method == "HEAD") {
-    return HttpMethod::kHttpMethodHead;
+    return HttpMethod::kHead;
   }
   if (method == "POST") {
-    return HttpMethod::kHttpMethodPost;
+    return HttpMethod::kPost;
   }
   if (method == "PUT") {
-    return HttpMethod::kHttpMethodPut;
+    return HttpMethod::kPut;
   }
   if (method == "DELETE") {
-    return HttpMethod::kHttpMethodDelete;
+    return HttpMethod::kDelete;
   }
   if (method == "TRACE") {
-    return HttpMethod::kHttpMethodTrace;
+    return HttpMethod::kTrace;
   }
   if (method == "CONTROL") {
-    return HttpMethod::kHttpMethodControl;
+    return HttpMethod::kControl;
   }
   if (method == "PURGE") {
-    return HttpMethod::kHttpMethodPurge;
+    return HttpMethod::kPurge;
   }
   if (method == "OPTIONS") {
-    return HttpMethod::kHttpMethodOptions;
+    return HttpMethod::kOptions;
   }
 
-  return HttpMethod::kHttpMethodUnknown;
+  return HttpMethod::kUnknown;
 }
 
 enum class HttpStatusCode {
-  kHttpStatusCodeUnknown = 0,
-  kHttpStatusCodeContinue = 100,
-  kHttpStatusCodeOK = 200,
-  kHttpStatusCodeCreate = 201,
-  kHttpStatusCodeAccepted = 202,
-  kHttpStatusCodeNonAuthoritative = 203,
-  kHttpStatusCodeNoContent = 204,
-  kHttpStatusCodeResetContent = 205,
-  kHttpStatusCodePartialContent = 206,
-  kHttpStatusCodeMultiStatus = 207,
-  kHttpStatusCodeMultipleChoices = 300,
-  kHttpStatusCodeMovedPermanently = 301,
-  kHttpStatusCodeMovedTemporarily = 302,
-  kHttpStatusCodeSeeOther = 303,
-  kHttpStatusCodeNotModified = 304,
-  kHttpStatusCodeUseProxy = 305,
-  kHttpStatusCodeTemporaryRedirect = 307,
-  kHttpStatusCodePermanentRedirect = 308,
-  kHttpStatusCodeBadRequest = 400,
-  kHttpStatusCodeUnauthorized = 401,
-  kHttpStatusCodePaymentRequired = 402,
-  kHttpStatusCodeForbidden = 403,
-  kHttpStatusCodeNotFound = 404,
-  kHttpStatusCodeMethodNotAllowed = 405,
-  kHttpStatusCodeNotAcceptable = 406,
-  kHttpStatusCodeRequestTimeout = 408,
-  kHttpStatusCodeLengthRequired = 411,
-  kHttpStatusCodePreconditionFailed = 412,
-  kHttpStatusCodeRequestEntityTooLarge = 413,
-  kHttpStatusCodeRequestUriTooLarge = 414,
-  kHttpStatusCodeUnsupportedMediaType = 415,
-  kHttpStatusCodeRangeNotSatisfiable = 416,
-  kHttpStatusCodeExpectationFailed = 417,
-  kHttpStatusCodeUnprocessableEntity = 422,
-  kHttpStatusCodeLocked = 423,
-  kHttpStatusCodeFailedDependency = 424,
-  kHttpStatusCodeUpgradeRequired = 426,
-  kHttpStatusCodeUnavailableForLegalReasons = 451,
-  kHttpStatusCodeInternalServerError = 500,
-  kHttpStatusCodeNotImplemented = 501,
-  kHttpStatusCodeBadGateway = 502,
-  kHttpStatusCodeServiceUnavailable = 503,
-  kHttpStatusCodeGatewayTimeout = 504,
-  kHttpStatusCodeVersionNotSupported = 505,
-  kHttpStatusCodeVariantAlsoVaries = 506,
-  kHttpStatusCodeInsufficientStorage = 507,
-  kHttpStatusCodeNotExtended = 510,
-  kHttpStatusCodeFrequencyCapping = 514,
-  kHttpStatusCodeScriptServerError = 544,
+  kUnknown = 0,
+  kContinue = 100,
+  kOK = 200,
+  kCreate = 201,
+  kAccepted = 202,
+  kNonAuthoritative = 203,
+  kNoContent = 204,
+  kResetContent = 205,
+  kPartialContent = 206,
+  kMultiStatus = 207,
+  kMultipleChoices = 300,
+  kMovedPermanently = 301,
+  kMovedTemporarily = 302,
+  kSeeOther = 303,
+  kNotModified = 304,
+  kUseProxy = 305,
+  kTemporaryRedirect = 307,
+  kPermanentRedirect = 308,
+  kBadRequest = 400,
+  kUnauthorized = 401,
+  kPaymentRequired = 402,
+  kForbidden = 403,
+  kNotFound = 404,
+  kMethodNotAllowed = 405,
+  kNotAcceptable = 406,
+  kRequestTimeout = 408,
+  kLengthRequired = 411,
+  kPreconditionFailed = 412,
+  kRequestEntityTooLarge = 413,
+  kRequestUriTooLarge = 414,
+  kUnsupportedMediaType = 415,
+  kRangeNotSatisfiable = 416,
+  kExpectationFailed = 417,
+  kUnprocessableEntity = 422,
+  kLocked = 423,
+  kFailedDependency = 424,
+  kUpgradeRequired = 426,
+  kUnavailableForLegalReasons = 451,
+  kInternalServerError = 500,
+  kNotImplemented = 501,
+  kBadGateway = 502,
+  kServiceUnavailable = 503,
+  kGatewayTimeout = 504,
+  kVersionNotSupported = 505,
+  kVariantAlsoVaries = 506,
+  kInsufficientStorage = 507,
+  kNotExtended = 510,
+  kFrequencyCapping = 514,
+  kScriptServerError = 544,
 };
 
 constexpr std::string_view HttpStatusCodeToString(
     HttpStatusCode code) noexcept {
   switch (code) {
-    case HttpStatusCode::kHttpStatusCodeUnknown:
+    case HttpStatusCode::kUnknown:
       return "Unknown Status";
-    case HttpStatusCode::kHttpStatusCodeContinue:
+    case HttpStatusCode::kContinue:
       return "Continue";
-    case HttpStatusCode::kHttpStatusCodeOK:
+    case HttpStatusCode::kOK:
       return "OK";
-    case HttpStatusCode::kHttpStatusCodeCreate:
+    case HttpStatusCode::kCreate:
       return "Created";
-    case HttpStatusCode::kHttpStatusCodeAccepted:
+    case HttpStatusCode::kAccepted:
       return "Accepted";
-    case HttpStatusCode::kHttpStatusCodeNonAuthoritative:
+    case HttpStatusCode::kNonAuthoritative:
       return "Non-Authoritative Information";
-    case HttpStatusCode::kHttpStatusCodeNoContent:
+    case HttpStatusCode::kNoContent:
       return "No Content";
-    case HttpStatusCode::kHttpStatusCodeResetContent:
+    case HttpStatusCode::kResetContent:
       return "Reset Content";
-    case HttpStatusCode::kHttpStatusCodePartialContent:
+    case HttpStatusCode::kPartialContent:
       return "Partial Content";
-    case HttpStatusCode::kHttpStatusCodeMultiStatus:
+    case HttpStatusCode::kMultiStatus:
       return "Multi-Status";
-    case HttpStatusCode::kHttpStatusCodeMultipleChoices:
+    case HttpStatusCode::kMultipleChoices:
       return "Multiple Choices";
-    case HttpStatusCode::kHttpStatusCodeMovedPermanently:
+    case HttpStatusCode::kMovedPermanently:
       return "Moved Permanently";
-    case HttpStatusCode::kHttpStatusCodeMovedTemporarily:
+    case HttpStatusCode::kMovedTemporarily:
       return "Found";
-    case HttpStatusCode::kHttpStatusCodeSeeOther:
+    case HttpStatusCode::kSeeOther:
       return "See Other";
-    case HttpStatusCode::kHttpStatusCodeNotModified:
+    case HttpStatusCode::kNotModified:
       return "Not Modified";
-    case HttpStatusCode::kHttpStatusCodeUseProxy:
+    case HttpStatusCode::kUseProxy:
       return "Use Proxy";
-    case HttpStatusCode::kHttpStatusCodeTemporaryRedirect:
+    case HttpStatusCode::kTemporaryRedirect:
       return "Temporary Redirect";
-    case HttpStatusCode::kHttpStatusCodePermanentRedirect:
+    case HttpStatusCode::kPermanentRedirect:
       return "Permanent Redirect";
-    case HttpStatusCode::kHttpStatusCodeBadRequest:
+    case HttpStatusCode::kBadRequest:
       return "Bad Request";
-    case HttpStatusCode::kHttpStatusCodeUnauthorized:
+    case HttpStatusCode::kUnauthorized:
       return "Authorization Required";
-    case HttpStatusCode::kHttpStatusCodePaymentRequired:
+    case HttpStatusCode::kPaymentRequired:
       return "Payment Required";
-    case HttpStatusCode::kHttpStatusCodeForbidden:
+    case HttpStatusCode::kForbidden:
       return "Forbidden";
-    case HttpStatusCode::kHttpStatusCodeNotFound:
+    case HttpStatusCode::kNotFound:
       return "Not Found";
-    case HttpStatusCode::kHttpStatusCodeMethodNotAllowed:
+    case HttpStatusCode::kMethodNotAllowed:
       return "Method Not Allowed";
-    case HttpStatusCode::kHttpStatusCodeNotAcceptable:
+    case HttpStatusCode::kNotAcceptable:
       return "Not Acceptable";
-    case HttpStatusCode::kHttpStatusCodeRequestTimeout:
+    case HttpStatusCode::kRequestTimeout:
       return "Request Time-out";
-    case HttpStatusCode::kHttpStatusCodeLengthRequired:
+    case HttpStatusCode::kLengthRequired:
       return "Length Required";
-    case HttpStatusCode::kHttpStatusCodePreconditionFailed:
+    case HttpStatusCode::kPreconditionFailed:
       return "Precondition Failed";
-    case HttpStatusCode::kHttpStatusCodeRequestEntityTooLarge:
+    case HttpStatusCode::kRequestEntityTooLarge:
       return "Request Entity Too Large";
-    case HttpStatusCode::kHttpStatusCodeRequestUriTooLarge:
+    case HttpStatusCode::kRequestUriTooLarge:
       return "Request-URI Too Large";
-    case HttpStatusCode::kHttpStatusCodeUnsupportedMediaType:
+    case HttpStatusCode::kUnsupportedMediaType:
       return "Unsupported Media Type";
-    case HttpStatusCode::kHttpStatusCodeRangeNotSatisfiable:
+    case HttpStatusCode::kRangeNotSatisfiable:
       return "Request Range Not Satisfiable";
-    case HttpStatusCode::kHttpStatusCodeExpectationFailed:
+    case HttpStatusCode::kExpectationFailed:
       return "Expectation Failed";
-    case HttpStatusCode::kHttpStatusCodeUnprocessableEntity:
+    case HttpStatusCode::kUnprocessableEntity:
       return "Unprocessable Entity";
-    case HttpStatusCode::kHttpStatusCodeLocked:
+    case HttpStatusCode::kLocked:
       return "Locked";
-    case HttpStatusCode::kHttpStatusCodeFailedDependency:
+    case HttpStatusCode::kFailedDependency:
       return "Failed Dependency";
-    case HttpStatusCode::kHttpStatusCodeUpgradeRequired:
+    case HttpStatusCode::kUpgradeRequired:
       return "Upgrade Required";
-    case HttpStatusCode::kHttpStatusCodeUnavailableForLegalReasons:
+    case HttpStatusCode::kUnavailableForLegalReasons:
       return "Unavailable For Legal Reasons";
-    case HttpStatusCode::kHttpStatusCodeInternalServerError:
+    case HttpStatusCode::kInternalServerError:
       return "Internal Error";
-    case HttpStatusCode::kHttpStatusCodeNotImplemented:
+    case HttpStatusCode::kNotImplemented:
       return "Method Not Implemented";
-    case HttpStatusCode::kHttpStatusCodeBadGateway:
+    case HttpStatusCode::kBadGateway:
       return "Bad Gateway";
-    case HttpStatusCode::kHttpStatusCodeServiceUnavailable:
+    case HttpStatusCode::kServiceUnavailable:
       return "Service Temporarily Unavailable";
-    case HttpStatusCode::kHttpStatusCodeGatewayTimeout:
+    case HttpStatusCode::kGatewayTimeout:
       return "Gateway Time-out";
-    case HttpStatusCode::kHttpStatusCodeVersionNotSupported:
+    case HttpStatusCode::kVersionNotSupported:
       return "HTTP Version Not Supported";
-    case HttpStatusCode::kHttpStatusCodeVariantAlsoVaries:
+    case HttpStatusCode::kVariantAlsoVaries:
       return "Variant Also Negotiates";
-    case HttpStatusCode::kHttpStatusCodeInsufficientStorage:
+    case HttpStatusCode::kInsufficientStorage:
       return "Insufficent Storage";
-    case HttpStatusCode::kHttpStatusCodeNotExtended:
+    case HttpStatusCode::kNotExtended:
       return "Not Extended";
-    case HttpStatusCode::kHttpStatusCodeFrequencyCapping:
+    case HttpStatusCode::kFrequencyCapping:
       return "Frequency Capped";
     default:
-      return "Unknown Status";
+      return "Unknown Status Code";
   }
 }
 
-constexpr HttpStatusCode StringToHttpStatusCode(
-    std::string_view status) noexcept {
+inline HttpStatusCode ToHttpStatusCode(std::string_view status) noexcept {
   int value{};
   auto [ptr, ec]{
       std::from_chars(status.data(), status.data() + status.size(), value)};
   if (ec != std::errc()) {
-    return HttpStatusCode::kHttpStatusCodeUnknown;
+    return HttpStatusCode::kUnknown;
   }
 
   return magic_enum::enum_cast<HttpStatusCode>(value).value_or(
-      HttpStatusCode::kHttpStatusCodeUnknown);
+      HttpStatusCode::kUnknown);
 }
 
 static constexpr std::string_view kHttpHeaderHost = "Host";

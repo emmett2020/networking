@@ -4,9 +4,11 @@
     "Constexpr",
     "cppcoreguidelines",
     "hicpp",
+    "HTAB",
     "NOLINTNEXTLINE",
     "Quic",
     "Referer",
+    "VCHAR",
     "xiaoming",
     "zhang"
   ]

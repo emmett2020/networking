@@ -18,12 +18,13 @@
 #include <stdexec/execution.hpp>
 using namespace std;  // NOLINT
 
-namespace net {}
+// namespace net {}
 
 int main() {
   std::cout << "hello world" << std::endl;
   std::cout << "you can find me by xiaomingZhang2020@outlook.com" << std::endl;
-  fmt::print("hello world\n");
+  fmt::print("hello world1\n");
+  std::cout << std::endl;
 
   // net::epoll_context io_context;
   // net::http::server server{};

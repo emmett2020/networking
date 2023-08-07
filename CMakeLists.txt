@@ -27,7 +27,7 @@ add_subdirectory(${THIRDPARTIES_PATH}/magic_enum)
 
 # find source files
 file (GLOB_RECURSE SOURCE_LIST ${SOURCE_PATH}/*.cpp)
-add_executable(${PROJECT_NAME} ${SOURCE_LIST})
+add_executable(${PROJECT_NAME} ${SOURCE_LIST} main.cpp)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC STDEXEC::stdexec 
                                              sio::sio 
@@ -36,11 +36,11 @@ target_link_libraries(${PROJECT_NAME} PUBLIC STDEXEC::stdexec
                                              spdlog::spdlog
                                              magic_enum::magic_enum)
 
-option(BUILD_NETWORING_TEST "build networking test" ON)
-if (BUILD_NETWORING_TEST)
+option(BUILD_NETWORKING_TEST "build networking test" ON)
+if (BUILD_NETWORKING_TEST)
     message(STATUS "building networing unittest...")
-    # stdexec also use Catch2
-    find_package(Catch2 REQUIRED)
+    # !stdexec also use Catch2
+    add_subdirectory(${THIRDPARTIES_PATH}/catch2)
     add_subdirectory(${TESTS_PATH})
 endif()
 
