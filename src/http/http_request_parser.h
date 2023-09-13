@@ -251,7 +251,8 @@ constexpr std::uint16_t GetDefaultPortByHttpScheme(HttpScheme scheme) noexcept {
 using std::error_code;
 
 /*
- * This parser is used for parse HTTP/1.0 and HTTP/1.1 message. According to
+ * Introduction:
+ *   This parser is used for parse HTTP/1.0 and HTTP/1.1 message. According to
  * RFC9112, An HTTP/1.1 message consists of a start-line followed by a CRLF and
  * a sequence of octets in a format similar to the Internet Message Format :
  * zero or more header field lines (collectively referred to as the "headers" or
@@ -261,16 +262,35 @@ using std::error_code;
  *                         *( field-line CRLF )
  *                         CRLF
  *                         [ message-body ]
- * A message can be either a request from client to server or a response from
+ * Message:
+ *   A message can be either a request from client to server or a response from
  * server to client. Syntactically, the two types of messages differ only in the
  * start-line, which is either a request-line (for requests) or a status-line
  * (for responses), and in the algorithm for determining the length of the
  * message body.
- * A URI consists of many parts. In general, a URI can
+ *
+ * Uri:
+ *   A URI consists of many parts. In general, a URI can
  * contain at most scheme, host, port, path, query parameters, and fragment.
  * Each subpart of the URI is described in detail in the corresponding parsing
  * function. For URI parse, in addition to the RFC, I also relied heavily on
  * whatwg standards. The relevant reference links are given below.
+ *
+ * Code guide:
+ *   This Parser uses the ParseXXX function to parse http messages. Protocol
+ * message parsing is always error-prone, and this parser tries its best to
+ * ensure that the code style of the parsing function is uniform.
+ *   1. All ParserXXX functions take three parameters. The first argument is the
+ * start of the buffer that this particular ParseXXX function needs to parse,
+ * the second argument is the end of the buffer, and the third argument is error
+ * code, which contains the specific error message. Note that the first argument
+ * is the reference type, which is assigned and returned by the particular
+ * ParseXXX function.
+ *   2.
+ *
+ * The correctness of the parsing is ensured by a large
+ * number of associated unit tests.
+ *
  * @see RFC 9110: https://datatracker.ietf.org/doc/html/rfc9110
  * @see RFC 9112: https://datatracker.ietf.org/doc/html/rfc9112
  * @see whatwg URL specification: https://url.spec.whatwg.org/#urls
@@ -922,6 +942,7 @@ class RequestParser {
         // Skip the colon.
         beg = p + 1;
         header_state_ = HeaderState::kSpacesBeforeValue;
+        return;
       }
       if (!detail::IsToken(*p)) {
         ec = Error::kBadHeaderName;
@@ -983,44 +1004,54 @@ class RequestParser {
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-field-syntax
    */
   void ParseHeader(const char*& beg, const char* end, error_code& ec) {
-    for (const char* p = beg; p < end; ++p) {
+    while (!ec) {
       switch (header_state_) {
         case HeaderState::kName: {
-          ParseHeaderName(p, end, ec);
+          ParseHeaderName(beg, end, ec);
           break;
         }
         case HeaderState::kSpacesBeforeValue: {
-          detail::TrimFront(p, end);
+          detail::TrimFront(beg, end);
           break;
         }
         case HeaderState::kValue: {
-          ParseHeaderValue(p, end, ec);
+          ParseHeaderValue(beg, end, ec);
           break;
         }
         case HeaderState::kSpacesAfterValue: {
-          detail::TrimFront(p, end);
-          if (p == end) {
+          beg = detail::TrimFront(beg, end);
+          if (beg == end) {
             ec = Error::kNeedMore;
             break;
           }
-          if (*p == '\r') {
+          if (*beg == '\r') {
             header_state_ = HeaderState::kLF;
+            ++beg;
             break;
           }
           ec = Error::kBadLineEnding;
           return;
         }
         case HeaderState::kCR: {
-          if (*p == '\r') {
+          if (beg == end) {
+            ec = Error::kNeedMore;
+            break;
+          }
+          if (*beg == '\r') {
             header_state_ = HeaderState::kLF;
+            ++beg;
             break;
           }
           ec = Error::kBadLineEnding;
           return;
         }
         case HeaderState::kLF: {
-          if (*p == '\n') {
-            beg = p + 1;
+          if (beg == end) {
+            ec = Error::kNeedMore;
+            break;
+          }
+          if (*beg == '\n') {
+            beg = beg + 1;
             header_state_ = HeaderState::kName;
             state_ = State::kExpectingNewline;
             return;
@@ -1029,8 +1060,7 @@ class RequestParser {
           return;
         }
       }  // switch
-    }    // for
-    ec = Error::kNeedMore;
+    }    // while
   }
 
   void ParseBody(const char*& beg, const char* end, error_code& ec) {}

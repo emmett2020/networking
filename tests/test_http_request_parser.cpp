@@ -732,4 +732,18 @@ TEST_CASE("Parse http version", "[parse_http_request]") {
   }
 }
 
-TEST_CASE("Parse http header", "[parse_http_request]") {}
+TEST_CASE("Parse http header", "[parse_http_request]") {
+  Request req;
+  RequestParser parser(&req);
+  error_code ec{};
+
+  SECTION("Parse http header host") {
+    string buffer = "GET /index.html http/1.1\r\nHost: 1.1.1.1\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == Error::kNeedMore);
+    CHECK(parser.state_ == RequestParser::State::kExpectingNewline);
+    CHECK(req.Host().size() == 1);
+    CHECK(req.ContainsHeader("Host"));
+    CHECK(req.HeaderValue("Host") == "1.1.1.1");
+  }
+}
