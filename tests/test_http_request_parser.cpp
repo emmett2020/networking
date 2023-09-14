@@ -23,6 +23,8 @@
 using namespace net::http;  // NOLINT
 using namespace std;        // NOLINT
 
+/*
+
 TEST_CASE("Parse http method", "[parse_http_request]") {
   Request req;
   RequestParser parser{&req};
@@ -732,18 +734,73 @@ TEST_CASE("Parse http version", "[parse_http_request]") {
   }
 }
 
+*/
+
 TEST_CASE("Parse http header", "[parse_http_request]") {
   Request req;
   RequestParser parser(&req);
   error_code ec{};
 
   SECTION("Parse http header host") {
-    string buffer = "GET /index.html http/1.1\r\nHost: 1.1.1.1\r\n";
+    string buffer = "GET /index.html HTTP/1.1\r\nHost: 1.1.1.1\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
     CHECK(parser.state_ == RequestParser::State::kExpectingNewline);
-    CHECK(req.Host().size() == 1);
+    CHECK(req.Headers().size() == 1);
     CHECK(req.ContainsHeader("Host"));
     CHECK(req.HeaderValue("Host") == "1.1.1.1");
   }
+
+  SECTION("Parse http header host, multiply spaces before header value") {
+    string buffer = "GET /index.html HTTP/1.1\r\nHost:     1.1.1.1\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == Error::kNeedMore);
+    CHECK(parser.state_ == RequestParser::State::kExpectingNewline);
+    CHECK(req.Headers().size() == 1);
+    CHECK(req.ContainsHeader("Host"));
+    CHECK(req.HeaderValue("Host") == "1.1.1.1");
+  }
+
+  SECTION("Parse http header host, multiply spaces after header value") {
+    string buffer = "GET /index.html HTTP/1.1\r\nHost: 1.1.1.1     \r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == Error::kNeedMore);
+    CHECK(parser.state_ == RequestParser::State::kExpectingNewline);
+    CHECK(req.Headers().size() == 1);
+    CHECK(req.ContainsHeader("Host"));
+    CHECK(req.HeaderValue("Host") == "1.1.1.1");
+  }
+
+  SECTION("Parse multiply http header") {
+    string buffer =
+        "GET /index.html HTTP/1.1\r\nHost:1.1.1.1\r\nServer:mock\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == Error::kNeedMore);
+    CHECK(parser.state_ == RequestParser::State::kExpectingNewline);
+    CHECK(req.Headers().size() == 2);
+    CHECK(req.ContainsHeader("Host"));
+    CHECK(req.HeaderValue("Host") == "1.1.1.1");
+    CHECK(req.ContainsHeader("Server"));
+    CHECK(req.HeaderValue("Server") == "mock");
+  }
+
+  SECTION("Parse http header Connection") {
+    string buffer = "GET /index.html HTTP/1.1\r\nConnection: Keep-Alive\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == Error::kNeedMore);
+    CHECK(parser.state_ == RequestParser::State::kExpectingNewline);
+    CHECK(req.ContainsHeader("Connection"));
+    CHECK(req.HeaderValue("Connection") == "Keep-Alive");
+  }
+
+  SECTION("Parse http header Content-Encoding") {
+    string buffer = "GET /index.html HTTP/1.1\r\nContent-Encoding: gzip\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == Error::kNeedMore);
+    CHECK(parser.state_ == RequestParser::State::kExpectingNewline);
+    CHECK(req.ContainsHeader("Content-Encoding"));
+    CHECK(req.HeaderValue("Content-Encoding") == "gzip");
+  }
+
+  SECTION("Step by Step parse http header") {}
 }

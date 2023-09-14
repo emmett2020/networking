@@ -392,8 +392,7 @@ class RequestParser {
     kSpacesBeforeValue,
     kValue,
     kSpacesAfterValue,
-    kCR,
-    kLF,
+    kHeaderLineEnding
   };
 
   enum class ParamState { kName, kValue, kCompleted };
@@ -404,7 +403,7 @@ class RequestParser {
    * @param[in] end A Pointer to the next position from the end of the buffer.
    * @param[out] ec The error code which holds detailed failure reason.
    * @details According to RFC 9112: method = token
-   *          The method token is case-sensitive. By convention, standardized
+   *         The method token is case-sensitive. By convention, standardized
    *          methods are defined in all-uppercase US-ASCII letters. If no error
    *          occurred, the method field of inner request will be filled and the
    *          state_ of this parser will be changed from kMethod to
@@ -954,7 +953,7 @@ class RequestParser {
 
   void ParseHeaderValue(const char*& beg, const char* end, error_code& ec) {
     for (const char* p = beg; p < end; ++p) {
-      if (*p == ' ' || *p == '\r' || *p == '\n') {
+      if (*p == ' ' || *p == '\r') {
         request_->headers.emplace(std::string{temp_buffer_.data(), temp_len_},
                                   detail::ToString(beg, p));
         temp_len_ = 0;
@@ -965,11 +964,7 @@ class RequestParser {
             return;
           }
           case '\r': {
-            header_state_ = HeaderState::kCR;
-            return;
-          }
-          case '\n': {
-            header_state_ = HeaderState::kLF;
+            header_state_ = HeaderState::kHeaderLineEnding;
             return;
           }
         }
@@ -977,6 +972,45 @@ class RequestParser {
       // TODO() Check valid value characters.
     }
     ec = Error::kNeedMore;
+  }
+
+  void ParseSpacesBeforeHeaderValue(const char*& beg, const char* end,
+                                    error_code& ec) {
+    beg = detail::TrimFront(beg, end);
+    if (beg == end) {
+      ec = Error::kNeedMore;
+      return;
+    }
+    header_state_ = HeaderState::kValue;
+  }
+
+  void ParseSpacesAfterHeaderValue(const char*& beg, const char* end,
+                                   error_code& ec) {
+    beg = detail::TrimFront(beg, end);
+    if (beg == end) {
+      ec = Error::kNeedMore;
+      return;
+    }
+    if (*beg != '\r') {
+      ec = Error::kBadLineEnding;
+      return;
+    }
+    header_state_ = HeaderState::kHeaderLineEnding;
+  }
+
+  void ParseHeaderLineEnding(const char*& beg, const char* end,
+                             error_code& ec) {
+    if (end - beg < 2) {
+      ec = Error::kNeedMore;
+      return;
+    }
+    if (*beg != '\r' || *(beg + 1) != '\n') {
+      ec = Error::kBadLineEnding;
+      return;
+    }
+    beg += 2;
+    header_state_ = HeaderState::kName;
+    state_ = State::kExpectingNewline;
   }
 
   /*
@@ -1011,7 +1045,7 @@ class RequestParser {
           break;
         }
         case HeaderState::kSpacesBeforeValue: {
-          detail::TrimFront(beg, end);
+          ParseSpacesBeforeHeaderValue(beg, end, ec);
           break;
         }
         case HeaderState::kValue: {
@@ -1019,44 +1053,11 @@ class RequestParser {
           break;
         }
         case HeaderState::kSpacesAfterValue: {
-          beg = detail::TrimFront(beg, end);
-          if (beg == end) {
-            ec = Error::kNeedMore;
-            break;
-          }
-          if (*beg == '\r') {
-            header_state_ = HeaderState::kLF;
-            ++beg;
-            break;
-          }
-          ec = Error::kBadLineEnding;
-          return;
+          ParseSpacesAfterHeaderValue(beg, end, ec);
+          break;
         }
-        case HeaderState::kCR: {
-          if (beg == end) {
-            ec = Error::kNeedMore;
-            break;
-          }
-          if (*beg == '\r') {
-            header_state_ = HeaderState::kLF;
-            ++beg;
-            break;
-          }
-          ec = Error::kBadLineEnding;
-          return;
-        }
-        case HeaderState::kLF: {
-          if (beg == end) {
-            ec = Error::kNeedMore;
-            break;
-          }
-          if (*beg == '\n') {
-            beg = beg + 1;
-            header_state_ = HeaderState::kName;
-            state_ = State::kExpectingNewline;
-            return;
-          }
-          ec = Error::kBadLineEnding;
+        case HeaderState::kHeaderLineEnding: {
+          ParseHeaderLineEnding(beg, end, ec);
           return;
         }
       }  // switch
