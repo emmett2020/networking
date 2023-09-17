@@ -16,7 +16,10 @@
 
 #pragma once
 
+#include <strings.h>
 #include <cstdint>
+#include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -47,7 +50,7 @@ struct RequestBase {
   std::array<char, 8192> path{0};
   std::array<char, 8192> uri{0};
   std::string body;
-  std::unordered_multimap<std::string, std::string> headers;
+  std::unordered_map<std::string, std::string> headers;
   std::unordered_multimap<std::string, std::string> params;
 };
 
@@ -69,7 +72,7 @@ struct Request : public RequestBase {
 
   std::string_view Body() const noexcept { return body; }
 
-  void SetContentLength(std::size_t length) noexcept {
+  void SetHeaderContentLength(std::size_t length) noexcept {
     content_length = length;
   }
 
@@ -102,21 +105,30 @@ struct Request : public RequestBase {
     return params.contains(param_key);
   }
 
-  std::unordered_multimap<std::string, std::string> Headers() const noexcept {
+  std::unordered_map<std::string, std::string> Headers() const noexcept {
+    return headers;
+  }
+
+  std::unordered_map<std::string, std::string>& Headers() noexcept {
     return headers;
   }
 
   std::optional<std::string_view> HeaderValue(
       const std::string& header_name) const noexcept {
-    if (!headers.contains(header_name)) {
-      return std::nullopt;
+    for (const auto& [name, value] : headers) {
+      if (::strcasecmp(name.c_str(), header_name.c_str()) == 0) {
+        return value;
+      }
     }
-    auto range = headers.equal_range(header_name);
-    return (range.first)->second;
+    return std::nullopt;
   }
 
   bool ContainsHeader(const std::string& header_name) const noexcept {
-    return headers.contains(header_name);
+    return std::any_of(headers.cbegin(), headers.cend(),
+                       [header_name](const auto& p) noexcept -> bool {
+                         return ::strcasecmp(p.first.c_str(),
+                                             header_name.c_str()) == 0;
+                       });
   }
 };
 

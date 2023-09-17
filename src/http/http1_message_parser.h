@@ -18,6 +18,7 @@
 
 #include <fmt/core.h>
 #include <strings.h>
+#include <algorithm>
 #include <cctype>
 #include <concepts>
 #include <limits>
@@ -296,9 +297,10 @@ using std::error_code;
  * @see whatwg URL specification: https://url.spec.whatwg.org/#urls
  */
 
-class RequestParser {
+class Http1MessageParser {
  public:
-  explicit RequestParser(RequestBase* request) noexcept : request_(request) {}
+  explicit Http1MessageParser(RequestBase* request) noexcept
+      : request_(request) {}
 
   void Reset(RequestBase* request) noexcept {
     request_ = request;
@@ -313,9 +315,9 @@ class RequestParser {
   }
 
   std::size_t Parse(std::span<char> buffer, error_code& ec) {
-    assert(
-        !ec &&
-        "RequestParser::parse() failed. The parameter ec should be clear.\n");
+    assert(!ec &&
+           "net::http::Http1MessageParser::parse() failed. The parameter ec "
+           "should be clear.");
     const char* p = buffer.data();
     const char* end = p + buffer.size();
     while (!ec) {
@@ -391,7 +393,6 @@ class RequestParser {
     kName,
     kSpacesBeforeValue,
     kValue,
-    kSpacesAfterValue,
     kHeaderLineEnding
   };
 
@@ -928,16 +929,35 @@ class RequestParser {
     state_ = State::kHeader;
   }
 
+  /*
+   * @brief Parse http header name.
+   * @param[in] beg A pointer to the beginning of the data to be parsed.
+   * @param[in] end A Pointer to the next position from the end of the buffer.
+   * @param[out] ec The error code which holds detailed failure reason.
+   * @details: A header name labels the corresponding header value as having the
+   * semantics defined by that name. Header names are case-insensitive. In order
+   * to reduce the performance penalty, the library directly stores the header's
+   * lowercase mode, which makes it easier to use the case-insensitive mode. And
+   * the header name is not allowed to be empty.
+   * According to RFC 9110:
+   *       header-name    = tokens
+   * Note that the header name maybe repeated. In this case, its combined header
+   * value consists of the list of corresponding header line values within that
+   * section, concatenated in order, with each header line value separated by a
+   * comma.
+   * @see https://datatracker.ietf.org/doc/html/rfc9110#name-field-names
+   */
   void ParseHeaderName(const char*& beg, const char* end, error_code& ec) {
     for (const char* p = beg; p < end; ++p) {
       if (*p == ':') {
-        if (p == beg) {
-          // empty header name
-          ec = Error::kBadHeaderName;
+        if (p == beg) [[unlikely]] {
+          ec = Error::kEmptyHeaderName;
           return;
         }
+        // Save header name to temporary buffer, then insert it to map later.
         ::memcpy(temp_buffer_.data(), beg, p - beg);
         temp_len_ = p - beg;
+
         // Skip the colon.
         beg = p + 1;
         header_state_ = HeaderState::kSpacesBeforeValue;
@@ -951,25 +971,73 @@ class RequestParser {
     ec = Error::kNeedMore;
   }
 
+  /*
+   * @brief When the header name is repeated, some header names can simply use
+   * the last appeared value, while others can combine all the values into a
+   * list as the final value. This function returns whether the given parameter
+   * belongs to the second type of header.
+   */
+  static bool NeedConcatHeaderValue(std::string_view header_name) noexcept {
+    return header_name == "accept-encoding";
+  }
+
+  /*
+   * @brief Parse http header value.
+   * @param[in] beg A pointer to the beginning of the data to be parsed.
+   * @param[in] end A Pointer to the next position from the end of the buffer.
+   * @param[out] ec The error code which holds detailed failure reason.
+   * @details HTTP header value consist of a sequence of characters in a format
+   * defined by the field's grammar. A header value does not include leading or
+   * trailing whitespace. And it's not allowed to be empty. When the name is
+   * repeated, the value corresponding to the name is either the last value or a
+   * list of all values, separated by commas.
+   * According to RFC 9110:
+   *                field-value   = *field-content
+   *                field-content = field-vchar
+   *                                [ 1*( SP / HTAB / field-vchar ) field-vchar]
+   *                field-vchar   = VCHAR / obs-text
+   *                VCHAR         = any visible US-ASCII character
+   *                obs-text      = %x80-FF
+   * @see https://datatracker.ietf.org/doc/html/rfc9110#name-field-values
+   */
   void ParseHeaderValue(const char*& beg, const char* end, error_code& ec) {
     for (const char* p = beg; p < end; ++p) {
-      if (*p == ' ' || *p == '\r') {
-        request_->headers.emplace(std::string{temp_buffer_.data(), temp_len_},
-                                  detail::ToString(beg, p));
-        temp_len_ = 0;
-        beg = p;
-        switch (*p) {
-          case ' ': {
-            header_state_ = HeaderState::kSpacesAfterValue;
-            return;
-          }
-          case '\r': {
-            header_state_ = HeaderState::kHeaderLineEnding;
-            return;
-          }
-        }
+      // Focus only on '\r'.
+      if (*p != '\r') {
+        continue;
       }
-      // TODO() Check valid value characters.
+
+      // Skip the tail whitespaces.
+      const char* whitespace = p - 1;
+      while (*whitespace == ' ') {
+        --whitespace;
+      }
+
+      // Empty header value.
+      if (whitespace == beg - 1) {
+        ec = Error::kEmptyHeaderValue;
+        return;
+      }
+
+      // Header name is case-insensitive. Save header name in lowercase.
+      std::string lower_header_name;
+      lower_header_name.resize(temp_len_);
+      std::transform(temp_buffer_.begin(), temp_buffer_.begin() + temp_len_,
+                     lower_header_name.begin(), tolower);
+      std::string header_value{beg, whitespace + 1};
+
+      // Concat all header values in a list.
+      if (NeedConcatHeaderValue(lower_header_name) &&
+          request_->headers.contains(lower_header_name)) {
+        request_->headers[lower_header_name] += "," + header_value;
+      } else {
+        // Insert original header name and header value to headers map.
+        request_->headers[lower_header_name] = header_value;
+      }
+      temp_len_ = 0;
+      beg = p;
+      header_state_ = HeaderState::kHeaderLineEnding;
+      return;
     }
     ec = Error::kNeedMore;
   }
@@ -982,20 +1050,6 @@ class RequestParser {
       return;
     }
     header_state_ = HeaderState::kValue;
-  }
-
-  void ParseSpacesAfterHeaderValue(const char*& beg, const char* end,
-                                   error_code& ec) {
-    beg = detail::TrimFront(beg, end);
-    if (beg == end) {
-      ec = Error::kNeedMore;
-      return;
-    }
-    if (*beg != '\r') {
-      ec = Error::kBadLineEnding;
-      return;
-    }
-    header_state_ = HeaderState::kHeaderLineEnding;
   }
 
   void ParseHeaderLineEnding(const char*& beg, const char* end,
@@ -1019,45 +1073,34 @@ class RequestParser {
    * @param[in] end A Pointer to the next position from the end of the buffer.
    * @param[out] ec The error code which holds detailed failure reason.
    * @details HTTP headers let the client and the server pass additional
-   *          information with an HTTP request or response. An HTTP header
-   *          consists of it's case-insensitive name followed by a colon (:),
-   *          then by its value. Whitespace before the value is ignored.
-   *          According to RFC 9110:
-   *                header-name   = token
-   *                field-value   = *field-content
-   *                field-content = field-vchar
-   *                                [ 1*( SP / HTAB / field-vchar ) field-vchar]
-   *                field-vchar   = VCHAR / obs-text
-   *                VCHAR         = any visible US-ASCII character
-   *                obs-text      = %x80-FF
-   *          Note that the header name maybe repeated. In this case, its
-   *          combined header value consists of the list of corresponding header
-   *          line values within that section, concatenated in order, with each
-   *          header line value separated by a comma.
+   * information with an HTTP request or response. An HTTP header consists of
+   * it's case-insensitive name followed by a colon (:), then by its value.
+   * Whitespace before the value is ignored. Note that the header name maybe
+   * repeated.
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-fields
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-field-syntax
    */
   void ParseHeader(const char*& beg, const char* end, error_code& ec) {
+    const char* p = beg;
     while (!ec) {
       switch (header_state_) {
         case HeaderState::kName: {
-          ParseHeaderName(beg, end, ec);
+          ParseHeaderName(p, end, ec);
           break;
         }
         case HeaderState::kSpacesBeforeValue: {
-          ParseSpacesBeforeHeaderValue(beg, end, ec);
+          ParseSpacesBeforeHeaderValue(p, end, ec);
           break;
         }
         case HeaderState::kValue: {
-          ParseHeaderValue(beg, end, ec);
-          break;
-        }
-        case HeaderState::kSpacesAfterValue: {
-          ParseSpacesAfterHeaderValue(beg, end, ec);
+          ParseHeaderValue(p, end, ec);
           break;
         }
         case HeaderState::kHeaderLineEnding: {
-          ParseHeaderLineEnding(beg, end, ec);
+          ParseHeaderLineEnding(p, end, ec);
+          if (!ec) {
+            beg = p;
+          }
           return;
         }
       }  // switch
@@ -1072,6 +1115,7 @@ class RequestParser {
   ParamState param_state_{ParamState::kName};
   HeaderState header_state_{HeaderState::kName};
   RequestBase* request_{nullptr};
+  std::size_t parsed_len_{0};
   uint32_t temp_len_{0};
   std::array<char, 8192> temp_buffer_{};
 };

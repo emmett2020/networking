@@ -46,6 +46,7 @@ enum class Error {
   kBadHeader,
   kBadHeaderName,
   kEmptyHeaderName,
+  kEmptyHeaderValue,
   kBadHeaderValue,
   kBadContentLength,
   kBadTransferEncoding,
@@ -113,6 +114,8 @@ class HttpErrorCategory : public std::error_category {
         return "bad header";
       case Error::kEmptyHeaderName:
         return "empty header name";
+      case Error::kEmptyHeaderValue:
+        return "empty header value";
       case Error::kBadHeaderName:
         return "bad header name";
       case Error::kBadHeaderValue:
