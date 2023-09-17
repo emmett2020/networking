@@ -314,6 +314,13 @@ class Http1MessageParser {
     uri_parsed_len_ = 0;
   }
 
+  struct Arguments {
+    const char* buffer_start;
+    const char* cur;
+    const char* buffer_end;
+    std::size_t parsed_size;
+  };
+
   std::size_t Parse(std::span<char> buffer, error_code& ec) {
     assert(!ec &&
            "net::http::Http1MessageParser::parse() failed. The parameter ec "
@@ -404,14 +411,20 @@ class Http1MessageParser {
    * @param[in] end A Pointer to the next position from the end of the buffer.
    * @param[out] ec The error code which holds detailed failure reason.
    * @details According to RFC 9112: method = token
-   *         The method token is case-sensitive. By convention, standardized
-   *          methods are defined in all-uppercase US-ASCII letters. If no error
-   *          occurred, the method field of inner request will be filled and the
-   *          state_ of this parser will be changed from kMethod to
-   *          kSpacesBeforeUri.
+   * The method token is case-sensitive. By convention, standardized methods are
+   * defined in all-uppercase US-ASCII letters and not allowd to be empty. If no
+   * error occurred, the method field of inner request will be filled and the
+   * state_ of this parser will be changed from kMethod to kSpacesBeforeUri.
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-method
    */
   void ParseMethod(const char*& beg, const char* end, error_code& ec) {
+    // Because all methods are at least 3 in length, plus a single space,
+    // parsing begins when four characters are received.
+    //  if (end - beg < 4) {
+    //   ec = Error::kNeedMore;
+    //   return;
+    // }
+
     for (const char* p = beg; p < end; ++p) {
       // Collect method string until met first non-method charater.
       if (detail::IsToken(*p)) [[likely]] {
@@ -1101,10 +1114,11 @@ class Http1MessageParser {
           if (!ec) {
             beg = p;
           }
-          return;
+          break;
         }
       }  // switch
     }    // while
+    header_state_ = HeaderState::kName;
   }
 
   void ParseBody(const char*& beg, const char* end, error_code& ec) {}
@@ -1115,7 +1129,6 @@ class Http1MessageParser {
   ParamState param_state_{ParamState::kName};
   HeaderState header_state_{HeaderState::kName};
   RequestBase* request_{nullptr};
-  std::size_t parsed_len_{0};
   uint32_t temp_len_{0};
   std::array<char, 8192> temp_buffer_{};
 };

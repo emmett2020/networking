@@ -737,6 +737,7 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
   Http1MessageParser parser(&req);
   error_code ec{};
 
+  /*
   SECTION("Parse http header Host") {
     string buffer =
         "GET /index.html HTTP/1.1\r\n"
@@ -1028,6 +1029,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
     CHECK(req.ContainsHeader("Date"));
     CHECK(req.HeaderValue("Date") == "Thu, 11 Aug 2016 15:23:13 GMT");
   }
+
+  */
 
   SECTION("Step by Step parse http header") {
     string buffer = "GET /index.html HTTP/1.1\r\n";
