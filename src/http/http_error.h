@@ -33,6 +33,7 @@ enum class Error {
   kBodyLimit,
   kBadAlloc,
   kBadLineEnding,
+  kEmptyMethod,
   kBadMethod,
   kBadUri,
   kBadScheme,
@@ -90,6 +91,8 @@ class HttpErrorCategory : public std::error_category {
         return "bad alloc";
       case Error::kBadLineEnding:
         return "bad line ending";
+      case Error::kEmptyMethod:
+        return "empty method";
       case Error::kBadMethod:
         return "bad method";
       case Error::kBadUri:

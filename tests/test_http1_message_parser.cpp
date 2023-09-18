@@ -122,10 +122,14 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
     CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
   }
 
-  SECTION("Parse invalid method string, whitespace before method") {
+  SECTION(
+      "Parse invalid method string, whitespace before method should return "
+      "kEmptyMethod") {
+    // Treat all the characters before first space as method.
+    // In this case, method is empty not "GET".
     string method = " GET ";
     CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kBadMethod);
+    CHECK(ec == Error::kEmptyMethod);
   }
 
   SECTION("Parse invalid method string, method isn't uppercase") {
@@ -228,7 +232,6 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) ==
           buffer.size() - 1);
     CHECK(ec == Error::kNeedMore);
-    CHECK(req.uri_len != 0);
     CHECK(req.Uri() == "/index.html");
     CHECK(req.Path() == "/index.html");
     CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
@@ -530,6 +533,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
           buffer.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.Params().size() == 1);
+    CHECK(req.ContainsParam(""));
     CHECK(req.ParamValue("") == "==");
   }
 
@@ -540,8 +544,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) ==
           buffer.size() - 1);
     CHECK(ec == Error::kNeedMore);
-    CHECK(req.Params().size() == 4);
-    CHECK(req.ParamValueList("").size() == 4);
+    CHECK(req.Params().size() == 1);
+    CHECK(req.ContainsParam(""));
+    CHECK(req.ParamValue("") == "");
   }
 
   SECTION("Uri contains path and parameters, the parameters has repeated key") {
@@ -549,12 +554,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) ==
           buffer.size() - 1);
     CHECK(ec == Error::kNeedMore);
-    CHECK(req.Params().size() == 2);
+    CHECK(req.Params().size() == 1);
     CHECK(req.ContainsParam("key"));
-    CHECK(req.ParamValue("key") == "val0");
-    CHECK(req.ParamValueList("key").size() == 2);
-    CHECK(req.ParamValueList("key")[0] == "val0");
-    CHECK(req.ParamValueList("key")[1] == "val1");
+    CHECK(req.ParamValue("key") == "val1");
   }
 
   SECTION("Uri contains non supported parameter token should kBadParameter") {
@@ -580,6 +582,23 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.ParamValue("key1") == "val1");
   }
 
+  SECTION("Uri contains path and a parameter") {
+    string buffer = "GET /index.html?key=val ";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) ==
+          buffer.size() - 1);
+    CHECK(ec == Error::kNeedMore);
+    CHECK(req.method == HttpMethod::kGet);
+    CHECK(req.Uri() == "/index.html?key=val");
+    CHECK(req.Scheme() == HttpScheme::kUnknown);
+    CHECK(req.Host() == "");
+    CHECK(req.Port() == 80);
+    CHECK(req.Path() == "/index.html");
+    CHECK(req.Params().size() == 1);
+    CHECK(req.ContainsParam("key"));
+    CHECK(req.ParamValue("key").value() == "val");
+    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+  }
+
   SECTION("Step by step parse uri") {
     string buffer = "PO";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
@@ -600,7 +619,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(ec == Error::kNeedMore);
     CHECK(parser.state_ == Http1MessageParser::State::kUri);
     CHECK(parser.uri_state_ == Http1MessageParser::UriState::kScheme);
-    CHECK(parser.uri_parsed_len_ == 0);
+    CHECK(parser.inner_parsed_len_ == 0);
 
     ec.clear();
     // http://dom
@@ -609,7 +628,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(ec == Error::kNeedMore);
     CHECK(parser.state_ == Http1MessageParser::State::kUri);
     CHECK(parser.uri_state_ == Http1MessageParser::UriState::kHost);
-    CHECK(parser.uri_parsed_len_ == 7);
+    CHECK(parser.inner_parsed_len_ == 7);
 
     ec.clear();
     // http://domain:10
@@ -619,7 +638,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.state_ == Http1MessageParser::State::kUri);
     CHECK(parser.uri_state_ == Http1MessageParser::UriState::kPort);
     // The "http://domain:" is done.
-    CHECK(parser.uri_parsed_len_ == 7 + 7);
+    CHECK(parser.inner_parsed_len_ == 7 + 7);
 
     ec.clear();
     // http://domain:1080/index
@@ -629,7 +648,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.state_ == Http1MessageParser::State::kUri);
     CHECK(parser.uri_state_ == Http1MessageParser::UriState::kPath);
     // The "http://domain:1080" is done.
-    CHECK(parser.uri_parsed_len_ == 7 + 7 + 4);
+    CHECK(parser.inner_parsed_len_ == 7 + 7 + 4);
 
     ec.clear();
     // http://domain:1080/index.html?
@@ -639,7 +658,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.state_ == Http1MessageParser::State::kUri);
     CHECK(parser.uri_state_ == Http1MessageParser::UriState::kParams);
     // The "http://domain:1080/index.html?" is done.
-    CHECK(parser.uri_parsed_len_ == 7 + 7 + 4 + 12);
+    CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12);
 
     ec.clear();
     // http://domain:1080/index.html?key
@@ -649,7 +668,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.state_ == Http1MessageParser::State::kUri);
     CHECK(parser.uri_state_ == Http1MessageParser::UriState::kParams);
     // The "http://domain:1080/index.html?" is done.
-    CHECK(parser.uri_parsed_len_ == 7 + 7 + 4 + 12);
+    CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12);
 
     ec.clear();
     // http://domain:1080/index.html?key=
@@ -659,7 +678,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.state_ == Http1MessageParser::State::kUri);
     CHECK(parser.uri_state_ == Http1MessageParser::UriState::kParams);
     // The "http://domain:1080/index.html?" is done.
-    CHECK(parser.uri_parsed_len_ == 7 + 7 + 4 + 12 + 4);
+    CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12 + 4);
 
     ec.clear();
     // http://domain:1080/index.html?key=val
@@ -667,8 +686,8 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 37);
     CHECK(ec == Error::kNeedMore);
     CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
-    // The "http://domain:1080/index.html?key=val" is done.
-    CHECK(parser.uri_parsed_len_ == 7 + 7 + 4 + 12 + 4 + 3);
+    // The "http://domain:1080/index.html?key=val " is done.
+    CHECK(parser.inner_parsed_len_ == 0);
 
     CHECK(req.Uri() == "http://domain:1080/index.html?key=val");
     CHECK(req.scheme == HttpScheme::kHttp);
@@ -737,7 +756,6 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
   Http1MessageParser parser(&req);
   error_code ec{};
 
-  /*
   SECTION("Parse http header Host") {
     string buffer =
         "GET /index.html HTTP/1.1\r\n"
@@ -1019,6 +1037,38 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
     CHECK(req.HeaderValue("Content-Type") == "text/html;charset=utf-8");
   }
 
+  SECTION("Parse http header Content-Length, Content-Length has valid value") {
+    string buffer =
+        "GET /index.html HTTP/1.1\r\n"
+        "Content-Length: 120\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == Error::kNeedMore);
+    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(req.ContainsHeader("Content-Length"));
+    CHECK(req.HeaderValue("Content-Length") == "120");
+    CHECK(req.content_length == 120);
+  }
+
+  SECTION(
+      "Parse http header Content-Length, the length value is out of range "
+      "should return kBadContentLength") {
+    string buffer =
+        "GET /index.html HTTP/1.1\r\n"
+        "Content-Length: 12000000000000000000000000000000\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
+    CHECK(ec == Error::kBadContentLength);
+  }
+
+  SECTION(
+      "Parse http header Content-Length, the length string is invalid "
+      "should return kBadContentLength") {
+    string buffer =
+        "GET /index.html HTTP/1.1\r\n"
+        "Content-Length: -10\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
+    CHECK(ec == Error::kBadContentLength);
+  }
+
   SECTION("Parse http header Date") {
     string buffer =
         "GET /index.html HTTP/1.1\r\n"
@@ -1029,8 +1079,6 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
     CHECK(req.ContainsHeader("Date"));
     CHECK(req.HeaderValue("Date") == "Thu, 11 Aug 2016 15:23:13 GMT");
   }
-
-  */
 
   SECTION("Step by Step parse http header") {
     string buffer = "GET /index.html HTTP/1.1\r\n";
@@ -1082,5 +1130,44 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
     CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+  }
+}
+
+TEST_CASE("parse http request body") {
+  Request req;
+  Http1MessageParser parser(&req);
+  error_code ec{};
+
+  SECTION("No Content-Length header means no request body") {
+    string buffer =
+        "GET /index.html HTTP/1.1\r\n"
+        "\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == std::errc{});
+    CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(req.body == "");
+  }
+
+  SECTION("The value of Content-Length is zero means no request body") {
+    string buffer =
+        "GET /index.html HTTP/1.1\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == std::errc{});
+    CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(req.body == "");
+  }
+
+  SECTION("The value of Content-Length equals to request body") {
+    string buffer =
+        "GET /index.html HTTP/1.1\r\n"
+        "Content-Length: 11\r\n"
+        "\r\n"
+        "Hello World";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
+    CHECK(ec == std::errc{});
+    CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(req.body == "Hello World");
   }
 }

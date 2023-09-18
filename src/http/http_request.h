@@ -42,16 +42,13 @@ struct RequestBase {
   HttpScheme scheme{HttpScheme::kUnknown};
   HttpVersion version{HttpVersion::kUnknown};
   uint16_t port = 0;
-  size_t content_length{0};
-  size_t host_len{0};
-  size_t path_len{0};
-  size_t uri_len{0};
-  std::array<char, 8192> host{0};
-  std::array<char, 8192> path{0};
-  std::array<char, 8192> uri{0};
+  std::string host;
+  std::string path;
+  std::string uri;
   std::string body;
+  std::size_t content_length{0};
   std::unordered_map<std::string, std::string> headers;
-  std::unordered_multimap<std::string, std::string> params;
+  std::unordered_map<std::string, std::string> params;
 };
 
 struct Request : public RequestBase {
@@ -60,13 +57,13 @@ struct Request : public RequestBase {
 
   HttpScheme Scheme() const noexcept { return scheme; }
 
-  std::string_view Host() const noexcept { return {host.data(), host_len}; }
+  std::string_view Host() const noexcept { return host; }
 
   std::uint16_t Port() const noexcept { return port; }
 
-  std::string_view Path() const noexcept { return {path.data(), path_len}; }
+  std::string_view Path() const noexcept { return path; }
 
-  std::string_view Uri() const noexcept { return {uri.data(), uri_len}; }
+  std::string_view Uri() const noexcept { return uri; }
 
   HttpVersion Version() const noexcept { return version; }
 
@@ -76,29 +73,21 @@ struct Request : public RequestBase {
     content_length = length;
   }
 
-  std::unordered_multimap<std::string, std::string> Params() const noexcept {
+  std::unordered_map<std::string, std::string> Params() const noexcept {
+    return params;
+  }
+
+  std::unordered_map<std::string, std::string>& Params() noexcept {
     return params;
   }
 
   std::optional<std::string_view> ParamValue(
       const std::string& param_key) const noexcept {
-    if (!params.contains(param_key)) {
+    auto it = params.find(param_key);
+    if (it == params.end()) {
       return std::nullopt;
     }
-    auto range = params.equal_range(param_key);
-    // For repeated parameter key, use the first parameter value as the final
-    // value.
-    return (range.first)->second;
-  }
-
-  std::vector<std::string_view> ParamValueList(
-      const std::string& param_key) const noexcept {
-    std::vector<std::string_view> list{};
-    auto range = params.equal_range(param_key);
-    for (auto it = range.first; it != range.second; ++it) {
-      list.push_back(it->second);
-    }
-    return list;
+    return it->second;
   }
 
   bool ContainsParam(const std::string& param_key) const noexcept {

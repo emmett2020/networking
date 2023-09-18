@@ -20,10 +20,13 @@
 #include <strings.h>
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <concepts>
+#include <cstddef>
 #include <limits>
 #include <span>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <utility>
 
@@ -300,7 +303,9 @@ using std::error_code;
 class Http1MessageParser {
  public:
   explicit Http1MessageParser(RequestBase* request) noexcept
-      : request_(request) {}
+      : request_(request) {
+    name_.reserve(8192);
+  }
 
   void Reset(RequestBase* request) noexcept {
     request_ = request;
@@ -308,73 +313,78 @@ class Http1MessageParser {
   }
 
   void Reset() noexcept {
-    state_ = State::kInitial;
+    state_ = State::kMethod;
     header_state_ = HeaderState::kName;
-    uri_state_ = UriState::kInitial;
-    uri_parsed_len_ = 0;
+    uri_state_ = UriState::kScheme;
+    param_state_ = ParamState::kName;
+    inner_parsed_len_ = 0;
+    name_.clear();
   }
 
-  struct Arguments {
-    const char* buffer_start;
-    const char* cur;
-    const char* buffer_end;
-    std::size_t parsed_size;
-  };
+  [[nodiscard]] RequestBase* AssociatedRequest() const noexcept {
+    return request_;
+  }
 
   std::size_t Parse(std::span<char> buffer, error_code& ec) {
     assert(!ec &&
            "net::http::Http1MessageParser::parse() failed. The parameter ec "
            "should be clear.");
-    const char* p = buffer.data();
-    const char* end = p + buffer.size();
+    Argument arg{
+        .buffer_beg = buffer.data(),
+        .buffer_end = buffer.data() + buffer.size(),
+        .parsed_len = 0,
+    };
     while (!ec) {
       switch (state_) {
-        case State::kInitial:
-          state_ = State::kMethod;
         case State::kMethod: {
-          ParseMethod(p, end, ec);
+          ParseMethod(arg, ec);
           break;
         }
         case State::kSpacesBeforeUri: {
-          ParseSpacesBeforeUri(p, end, ec);
+          ParseSpacesBeforeUri(arg, ec);
           break;
         }
         case State::kUri: {
-          ParseUri(p, end, ec);
+          ParseUri(arg, ec);
           break;
         }
         case State::kSpacesBeforeHttpVersion: {
-          ParseSpacesBeforeVersion(p, end, ec);
+          ParseSpacesBeforeVersion(arg, ec);
           break;
         }
         case State::kVersion: {
-          ParseVersion(p, end, ec);
+          ParseVersion(arg, ec);
           break;
         }
         case State::kExpectingNewline: {
-          ParseExpectingNewLine(p, end, ec);
+          ParseExpectingNewLine(arg, ec);
           break;
         }
         case State::kHeader: {
-          ParseHeader(p, end, ec);
+          ParseHeader(arg, ec);
           break;
         }
         case State::kBody: {
-          ParseBody(p, end, ec);
+          ParseBody(arg, ec);
           break;
         }
         case State::kCompleted: {
-          return end - p;
+          return arg.parsed_len;
         }
       }
     }
     // If fatal error occurs, return zero as parsed size.
-    return ec == Error::kNeedMore ? p - buffer.data() : 0;
+    return ec == Error::kNeedMore ? arg.parsed_len : 0;
   }
 
  private:
+  struct Argument {
+    const char* buffer_beg{nullptr};
+    const char* buffer_end{nullptr};
+    std::size_t parsed_len{0};
+  };
+
   enum class State {
-    kInitial,
     kMethod,
     kSpacesBeforeUri,
     kUri,
@@ -386,15 +396,7 @@ class Http1MessageParser {
     kCompleted
   };
 
-  enum class UriState {
-    kInitial,
-    kScheme,
-    kHost,
-    kPort,
-    kPath,
-    kParams,
-    kCompleted
-  };
+  enum class UriState { kScheme, kHost, kPort, kPath, kParams, kCompleted };
 
   enum class HeaderState {
     kName,
@@ -406,45 +408,43 @@ class Http1MessageParser {
   enum class ParamState { kName, kValue, kCompleted };
 
   /*
-   * @brief Parse http request method.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
-   * @details According to RFC 9112: method = token
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9112:
+   *                        method = token
    * The method token is case-sensitive. By convention, standardized methods are
    * defined in all-uppercase US-ASCII letters and not allowd to be empty. If no
    * error occurred, the method field of inner request will be filled and the
    * state_ of this parser will be changed from kMethod to kSpacesBeforeUri.
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-method
    */
-  void ParseMethod(const char*& beg, const char* end, error_code& ec) {
-    // Because all methods are at least 3 in length, plus a single space,
-    // parsing begins when four characters are received.
-    //  if (end - beg < 4) {
-    //   ec = Error::kNeedMore;
-    //   return;
-    // }
-
-    for (const char* p = beg; p < end; ++p) {
+  void ParseMethod(Argument& arg, error_code& ec) {
+    const char* method_beg = arg.buffer_beg + arg.parsed_len;
+    for (const char* p = method_beg; p < arg.buffer_end; ++p) {
       // Collect method string until met first non-method charater.
       if (detail::IsToken(*p)) [[likely]] {
         continue;
       }
 
-      // Empty method is not allowed. And the first charater after method must
-      // be whitespace.
-      if (*p != ' ' || p == beg) {
+      // The first character after method string must be whitespace.
+      if (*p != ' ') {
         ec = Error::kBadMethod;
         return;
       }
 
-      request_->method = detail::ToHttpMethod(beg, p);
+      // Empty method is not allowed.
+      if (p == method_beg) {
+        ec = Error::kEmptyMethod;
+        return;
+      }
+
+      request_->method = detail::ToHttpMethod(method_beg, p);
       if (request_->method == HttpMethod::kUnknown) {
         ec = Error::kBadMethod;
         return;
       }
 
-      beg = p;
+      arg.parsed_len += p - method_beg;
       state_ = State::kSpacesBeforeUri;
       return;
     }
@@ -452,104 +452,98 @@ class Http1MessageParser {
   }
 
   /*
-   * @brief Parse white spaces before http scheme.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
-   * @details Multiply whitespaces are allowd between method and URI.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details Parse white spaces before http URI. Multiply whitespaces are
+   * allowd between method and URI.
    */
-  void ParseSpacesBeforeUri(const char*& beg, const char* end, error_code& ec) {
-    const char* p = detail::TrimFront(beg, end);
-    if (p == end) [[unlikely]] {
+  void ParseSpacesBeforeUri(Argument& arg, error_code& ec) {
+    const char* spaces_beg = arg.buffer_beg + arg.parsed_len;
+    const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
+    if (p == arg.buffer_end) [[unlikely]] {
       ec = Error::kNeedMore;
       return;
     }
-    beg = p;
+    arg.parsed_len += p - spaces_beg;
     state_ = State::kUri;
   }
 
   /*
-   * @brief Parse http request uri.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
    * @details The "http" and "https" URI defined as below:
    *                     http-URI  = "http"  "://" authority path [ "?" query ]
    *                     https-URI = "https" "://" authority path [ "?" query ]
    *                     authority = host ":" port
-   *          Note that we will use the first non-whitespace charater to judge
-   *          the URI form. That's to say, if the URI starts with '/', the URI
-   *          form is absolute-path. Otherwise it's absolute-form. You may need
-   *          to read RFC9112 to get a detailed difference with these two forms.
+   * Parse http request uri. Use the first non-whitespace charater to judge the
+   * URI form. That's to say, if the URI starts with '/', the URI form is
+   * absolute-path. Otherwise it's absolute-form. You may need to read RFC9112
+   * to get a detailed difference with these two forms.
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-target
    */
-  void ParseUri(const char*& beg, const char* end, error_code& ec) noexcept {
-    if (beg == end) {
+  void ParseUri(Argument& arg, error_code& ec) noexcept {
+    const char* uri_beg = arg.buffer_beg + arg.parsed_len;
+    if (uri_beg >= arg.buffer_end) {
       ec = Error::kNeedMore;
       return;
     }
 
-    // Don't always parse from the beginning of uri buffer.
-    const char* p = beg + uri_parsed_len_;
+    if (*uri_beg == '/') {
+      request_->port = 80;
+      uri_state_ = UriState::kPath;
+    } else {
+      uri_state_ = UriState::kScheme;
+    }
+    inner_parsed_len_ = 0;
+
     while (!ec) {
       switch (uri_state_) {
-        case UriState::kInitial: {
-          if (*p == '/') {
-            request_->port = 80;
-            uri_state_ = UriState::kPath;
-          } else {
-            uri_state_ = UriState::kScheme;
-          }
-          break;
-        }
         case UriState::kScheme: {
-          ParseScheme(p, end, ec);
+          ParseScheme(arg, ec);
           break;
         }
         case UriState::kHost: {
-          ParseHost(p, end, ec);
+          ParseHost(arg, ec);
           break;
         }
         case UriState::kPort: {
-          ParsePort(p, end, ec);
+          ParsePort(arg, ec);
           break;
         }
         case UriState::kPath: {
-          ParsePath(p, end, ec);
+          ParsePath(arg, ec);
           break;
         }
         case UriState::kParams: {
-          ParseParams(p, end, ec);
+          ParseParams(arg, ec);
           break;
         }
         case UriState::kCompleted: {
           state_ = State::kSpacesBeforeHttpVersion;
-          uri_parsed_len_ = p - beg;
-          ::memcpy(request_->uri.data(), beg, p - beg);
-          request_->uri_len = p - beg;
-          beg = p;
+          request_->uri = {uri_beg, uri_beg + inner_parsed_len_};
+          arg.parsed_len += inner_parsed_len_;
+          inner_parsed_len_ = 0;
           return;
         }
       }
     }
-    uri_parsed_len_ = p - beg;
   }
 
   /*
-   * @brief Parse http request scheme.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
    * @details According to RFC 9110:
    *                        scheme = "+" | "-" | "." | DIGIT | ALPHA
-   *          The scheme are case-insensitive and normally provided in
-   *          lowercase. In this library, we mainly parse two schemes: "http"
-   *          URI scheme and "https" URI scheme.  If no error occurs, the inner
-   *          request's scheme field will be filled.
+   * Parse http request scheme. The scheme are case-insensitive and normally
+   * provided in lowercase. This library mainly parse two schemes: "http"
+   * URI scheme and "https" URI scheme. If no error occurs, the inner request's
+   * scheme field will be filled.
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
    */
-  void ParseScheme(const char*& beg, const char* end, error_code& ec) {
-    for (const char* p = beg; p < end; ++p) {
+  void ParseScheme(Argument& arg, error_code& ec) {
+    const char* uri_beg = arg.buffer_beg + arg.parsed_len;
+    const char* scheme_beg = uri_beg + inner_parsed_len_;
+    for (const char* p = scheme_beg; p < arg.buffer_end; ++p) {
       // Skip the scheme character to find first colon.
       if (((*p | 0x20) >= 'a' && (*p | 0x20) <= 'z') ||  //
           (*p >= '0' && *p <= '9') ||                    //
@@ -557,21 +551,28 @@ class Http1MessageParser {
         continue;
       }
 
-      // The length of scheme name must be more than 2.
-      // The character next to the first colon must be "//".
-      if (*p != ':' || end - p < 2 || *(p + 1) != '/' || *(p + 2) != '/') {
+      // Need more data.
+      if (arg.buffer_end - p < 2) {
+        ec = Error::kNeedMore;
+        return;
+      }
+
+      // The characters next to the first non-scheme character must be "://".
+      if (*p != ':' || *(p + 1) != '/' || *(p + 2) != '/') {
         ec = Error::kBadScheme;
         return;
       }
 
-      if (p - beg >= 5 && detail::CaseCompareHttpChar(beg)) {
+      uint32_t scheme_len = p - scheme_beg;
+      if (scheme_len >= 5 && detail::CaseCompareHttpChar(scheme_beg)) {
         request_->scheme = HttpScheme::kHttps;
-      } else if (p - beg >= 4 && detail::CaseCompareHttpChar(beg)) {
+      } else if (scheme_len >= 4 && detail::CaseCompareHttpChar(scheme_beg)) {
         request_->scheme = HttpScheme::kHttp;
       } else {
         request_->scheme = HttpScheme::kUnknown;
       }
-      beg = p + 3;
+
+      inner_parsed_len_ = scheme_len + 3;
       uri_state_ = UriState::kHost;
       return;
     }
@@ -579,24 +580,23 @@ class Http1MessageParser {
   }
 
   /*
-   * @brief Parse http request host.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
    * @details According to RFC 9110:
    *                          host = "-" | "." | DIGIT | ALPHA
-   *          Parse http request host identifier. The host can be IP address
-   *          style ASCII string (both IPv4 address and IPv6 address) or a
-   *          domain name ASCII string which could be DNS resolved future.
-   *          Note that empty host identifier is not allowed in a "http" or
-   *          "https" URI scheme. If no error occurs, the inner request's host
-   *          field will be filled.
+   * Parse http request host identifier. The host can be IP address style ASCII
+   * string (both IPv4 address and IPv6 address) or a domain name ASCII string
+   * which could be DNS resolved future. Note that empty host identifier is not
+   * allowed in a "http" or "https" URI scheme. If no error occurs, the inner
+   * request's host field will be filled.
    * @see
    * https://datatracker.ietf.org/doc/html/rfc9110#name-authoritative-access
    * https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
    */
-  void ParseHost(const char*& beg, const char* end, error_code& ec) {
-    for (const char* p = beg; p < end; ++p) {
+  void ParseHost(Argument& arg, error_code& ec) {
+    const char* uri_beg = arg.buffer_beg + arg.parsed_len;
+    const char* host_beg = uri_beg + inner_parsed_len_;
+    for (const char* p = host_beg; p < arg.buffer_end; ++p) {
       // Collect host string until met first non-host charater.
       if (((*p | 0x20) >= 'a' && (*p | 0x20) <= 'z') ||  //
           (*p >= '0' && *p <= '9') ||                    //
@@ -611,35 +611,35 @@ class Http1MessageParser {
       }
 
       // A empty host is not allowed at "http" scheme and "https" scheme.
-      if (p == beg && (request_->scheme == HttpScheme::kHttp ||
-                       request_->scheme == HttpScheme::kHttps)) {
+      if (p == host_beg && (request_->scheme == HttpScheme::kHttp ||
+                            request_->scheme == HttpScheme::kHttps)) {
         ec = Error::kBadHost;
         return;
       }
 
       // Fill host field of inner request.
-      request_->host_len = p - beg;
-      ::memcpy(request_->host.data(), beg, p - beg);
+      uint32_t host_len = p - host_beg;
+      request_->host = {host_beg, p};
 
       // Go to next state depends on the first charater after host identifier.
       switch (*p) {
         case ':':
-          beg = p + 1;
+          inner_parsed_len_ += host_len + 1;
           uri_state_ = UriState::kPort;
           return;
         case '/':
           request_->port = detail::GetDefaultPortByHttpScheme(request_->scheme);
-          beg = p;
+          inner_parsed_len_ += host_len;
           uri_state_ = UriState::kPath;
           return;
         case '?':
           request_->port = detail::GetDefaultPortByHttpScheme(request_->scheme);
-          beg = p + 1;
+          inner_parsed_len_ += host_len + 1;
           uri_state_ = UriState::kParams;
           return;
         case ' ':
           request_->port = detail::GetDefaultPortByHttpScheme(request_->scheme);
-          beg = p;
+          inner_parsed_len_ += host_len;
           uri_state_ = UriState::kCompleted;
           return;
       }
@@ -648,89 +648,93 @@ class Http1MessageParser {
   }
 
   /*
-   * @brief Parse http request port.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code hich holds detailed failure reason.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
    * @details According to RFC 9110:
    *                          port = DIGIT
-   *          This function is used to parse http request port. Http request
-   *          port is a digit charater collection which used for TCP connection.
-   *          So the port value is less than 65535 in most Unix like platforms.
-   *          And according to RFC 9110, port can have leading zeros. If port is
-   *          elided from the URI, the default port for that scheme is used. If
-   *          no error occurs, the inner request's port field will be filled.
+   * Parse http request port. This function is used to parse http request port.
+   * Http request port is a digit charater collection which used for TCP
+   * connection. So the port value is less than 65535 in most Unix like
+   * platforms. And according to RFC 9110, port can have leading zeros. If port
+   * is elided from the URI, the default port for that scheme is used. If no
+   * error occurs, the inner request's port field will be filled.
    * @see
    * https://datatracker.ietf.org/doc/html/rfc9110#name-authoritative-access
    */
-  void ParsePort(const char*& beg, const char* end, error_code& ec) {
+  void ParsePort(Argument& arg, error_code& ec) {
     uint16_t acc = 0;
     uint16_t cur = 0;
 
-    // Always parse port from the beginning of the given buffer since use
-    // another variable to cache accumulate value makes thing comlicated while
-    // only save no more than five charater's parse time.
-    for (const char* p = beg; p < end; ++p) {
-      if (*p < '0' || *p > '9') [[unlikely]] {
-        if (*p == '/') {
-          request_->port =
-              acc != 0 ? acc
-                       : detail::GetDefaultPortByHttpScheme(request_->scheme);
-          beg = p;
-          uri_state_ = UriState::kPath;
-        } else if (*p == '?') {
-          request_->port =
-              acc != 0 ? acc
-                       : detail::GetDefaultPortByHttpScheme(request_->scheme);
-          beg = p + 1;
-          uri_state_ = UriState::kParams;
-        } else if (*p == ' ') {
-          request_->port =
-              acc != 0 ? acc
-                       : detail::GetDefaultPortByHttpScheme(request_->scheme);
-          beg = p;
-          uri_state_ = UriState::kCompleted;
-        } else {
+    const char* uri_beg = arg.buffer_beg + arg.parsed_len;
+    const char* port_beg = uri_beg + inner_parsed_len_;
+
+    for (const char* p = port_beg; p < arg.buffer_end; ++p) {
+      // Calculate the port value and save it in acc variable.
+      if (*p >= '0' && *p <= '9') [[likely]] {
+        cur = *p - '0';
+        if (acc * 10 + cur > std::numeric_limits<uint16_t>::max()) {
           ec = Error::kBadPort;
+          return;
         }
-        return;
+        acc = acc * 10 + cur;
+        continue;
       }
 
-      // Calculate the port value.
-      cur = *p - '0';
-      if (acc * 10 + cur > std::numeric_limits<uint16_t>::max()) {
+      // The first character next to port string should be one of follows.
+      if (*p != '/' && *p != '?' && *p != ' ') {
         ec = Error::kBadPort;
         return;
       }
-      acc = acc * 10 + cur;
-    }
+
+      // Port is zero, so use default port value based on scheme.
+      if (acc == 0) {
+        acc = detail::GetDefaultPortByHttpScheme(request_->scheme);
+      }
+      request_->port = acc;
+      uint32_t port_string_len = p - port_beg;
+      switch (*p) {
+        case '/': {
+          inner_parsed_len_ += port_string_len;
+          uri_state_ = UriState::kPath;
+          return;
+        }
+        case '?': {
+          inner_parsed_len_ += port_string_len + 1;
+          uri_state_ = UriState::kParams;
+          return;
+        }
+        case ' ': {
+          inner_parsed_len_ += port_string_len;
+          uri_state_ = UriState::kCompleted;
+          return;
+        }
+      }  // switch
+    }    // for
     ec = Error::kNeedMore;
   }
 
   /*
-   * @brief Parse http request path.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
    * @details According to RFC 9110:
    *                          path = token
-   *          Http request path is defined as the path and filename in a
-   *          request. It does not include scheme, host, port or query string.
-   *          If no error occurs, the inner request's path field will be filled.
+   * Parse http request path. Http request path is defined as the path and
+   * filename in a request. It does not include scheme, host, port or query
+   * string. If no error occurs, the inner request's path field will be filled.
    */
-  void ParsePath(const char*& beg, const char* end, error_code& ec) {
-    for (const char* p = beg; p < end; ++p) {
+  void ParsePath(Argument& arg, error_code& ec) {
+    const char* const uri_beg = arg.buffer_beg + arg.parsed_len;
+    const char* path_beg = uri_beg + inner_parsed_len_;
+    for (const char* p = path_beg; p < arg.buffer_end; ++p) {
       if (*p == '?') {
-        ::memcpy(request_->path.data(), beg, p - beg);
-        request_->path_len = p - beg;
-        beg = p + 1;
+        inner_parsed_len_ += p - path_beg + 1;
+        request_->path = {path_beg, p};
         uri_state_ = UriState::kParams;
         return;
       }
       if (*p == ' ') {
-        ::memcpy(request_->path.data(), beg, p - beg);
-        request_->path_len = p - beg;
-        beg = p;
+        inner_parsed_len_ += p - path_beg;
+        request_->path = {path_beg, p};
         uri_state_ = UriState::kCompleted;
         return;
       }
@@ -738,48 +742,60 @@ class Http1MessageParser {
         ec = Error::kBadPath;
         return;
       }
-    }
+    }  // for
     ec = Error::kNeedMore;
   }
 
-  void ParseParamName(const char*& beg, const char* end, error_code& ec) {
-    const char* name_start = beg;
-    // Skip the beginning of the continuous '&', which represents empty
-    // parameter name and parameter value.
-    while (name_start < end && *name_start == '&') {
-      ++name_start;
-    }
-    if (name_start == end) {
-      ec = Error::kNeedMore;
-      return;
-    }
-    for (const char* p = name_start; p < end; ++p) {
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9110:
+   *               parameter-name  = token
+   * The parameter name is allowed to be empty only when explicitly set the
+   * equal mark. In all other situations, an empty parameter name is
+   * forbiddened. Note that there isn't a clear specification illustrate what to
+   * do when there is a repeated key, we just use the last-occur policy now.
+   */
+  void ParseParamName(Argument& arg, error_code& ec) {
+    const char* uri_beg = arg.buffer_beg + arg.parsed_len;
+    const char* name_beg = uri_beg + inner_parsed_len_;
+    for (const char* p = name_beg; p < arg.buffer_end; ++p) {
       if (*p == '&') {
+        // Skip the "?&" or continuous '&' , which represents empty
+        // parameter name and parameter value.
+        if (p == name_beg || p - name_beg == 1) {
+          inner_parsed_len_ += 1;
+          return;
+        }
+
         // When all characters in two ampersand don't contain =, all
         // characters in ampersand (except ampersand) are considered
         // parameter names.
-        request_->params.emplace(std::string(name_start, p), "");
-        beg = p + 1;
+        name_ = {name_beg, p};
+        request_->params[name_] = "";
+        inner_parsed_len_ += p - name_beg + 1;
         return;
       }
+
       if (*p == '=') {
-        ::memcpy(temp_buffer_.data(), name_start, p - name_start);
-        temp_len_ = p - name_start;
-        // Skip the equal mark.
-        beg = p + 1;
+        name_ = {name_beg, p};
+        inner_parsed_len_ += p - name_beg + 1;
         param_state_ = ParamState::kValue;
         return;
       }
+
       if (*p == ' ') {
         // When there are at least one characters in '&' and ' ', trated
         // them as parameter name.
-        if (name_start != p) {
-          request_->params.emplace(std::string(name_start, p), "");
+        if (name_beg != p) {
+          name_ = {name_beg, p};
+          request_->params[name_] = "";
         }
-        beg = p;
+        inner_parsed_len_ += p - name_beg;
         param_state_ = ParamState::kCompleted;
         return;
       }
+
       if (!detail::IsPathChar(*p)) {
         ec = Error::kBadParams;
         return;
@@ -788,19 +804,27 @@ class Http1MessageParser {
     ec = Error::kNeedMore;
   }
 
-  void ParseParamValue(const char*& beg, const char* end, error_code& ec) {
-    for (const char* p = beg; p < end; ++p) {
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9110:
+   *               parameter-value = ( token / quoted-string )
+   *               OWS             = *( SP / HTAB )
+   *                               ; optional whitespace
+   */
+  void ParseParamValue(Argument& arg, error_code& ec) {
+    const char* uri_beg = arg.buffer_beg + arg.parsed_len;
+    const char* value_beg = uri_beg + inner_parsed_len_;
+    for (const char* p = value_beg; p < arg.buffer_end; ++p) {
       if (*p == '&') {
-        request_->params.emplace(std::string(temp_buffer_.data(), temp_len_),
-                                 std::string{beg, p});
-        beg = p + 1;
+        request_->params[name_] = {value_beg, p};
+        inner_parsed_len_ += p - value_beg + 1;
         param_state_ = ParamState::kName;
         return;
       }
       if (*p == ' ') {
-        request_->params.emplace(std::string(temp_buffer_.data(), temp_len_),
-                                 std::string{beg, p});
-        beg = p;
+        request_->params[name_] = {value_beg, p};
+        inner_parsed_len_ += p - value_beg;
         param_state_ = ParamState::kCompleted;
         return;
       }
@@ -813,24 +837,12 @@ class Http1MessageParser {
   }
 
   /*
-   * @brief Parse http request parameters.
-   * @param[in]  beg A pointer to the beginning of the data to be parsed.
-   * @param[in]  end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
    * @details According to RFC 9110:
    *               parameters      = *( OWS ";" OWS [ parameter ] )
    *               parameter       = parameter-name "=" parameter-value
-   *               parameter-name  = token
-   *               parameter-value = ( token / quoted-string )
-   *               OWS             = *( SP / HTAB )
-   *                               ; optional whitespace
-   * The parameter name is allowed to be empty only when explicitly set the
-   * equal mark. In all other situations, an empty parameter name is
-   * forbiddened. Note that there isn't a clear specification illustrate what to
-   * do when there is a repeated key, we just use the first-occur policy now. If
-   * no error occurred, the params field of inner request will be filled and the
-   * state_ of this parser will be changed from kParams to
-   * kSpacesBeforeHttpVersion.
+   * @brief Parse http request parameters.
    * @see parameters:
    *           https://datatracker.ietf.org/doc/html/rfc9110#name-parameters
    * @see quoted-string:
@@ -838,141 +850,138 @@ class Http1MessageParser {
    * @see parse query parameter
    *           https://url.spec.whatwg.org/#query-state
    */
-  void ParseParams(const char*& beg, const char* end, error_code& ec) {
+  void ParseParams(Argument& arg, error_code& ec) {
+    param_state_ = ParamState::kName;
     while (!ec) {
       switch (param_state_) {
         case ParamState::kName: {
-          ParseParamName(beg, end, ec);
+          ParseParamName(arg, ec);
           break;
         }
         case ParamState::kValue: {
-          ParseParamValue(beg, end, ec);
+          ParseParamValue(arg, ec);
           break;
         }
         case ParamState::kCompleted: {
-          temp_len_ = 0;
+          name_.clear();
           uri_state_ = UriState::kCompleted;
           return;
         }
-      }
-    }
+      }  // switch
+    }    // while
   }
 
   /*
-   * @brief Parse white spaces before http version.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
-   * @details Multiply whitespaces are allowd between uri and http version.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details Parse white spaces before http version. Multiply whitespaces are
+   * allowd between uri and http version.
    */
-  void ParseSpacesBeforeVersion(const char*& beg, const char* end,
-                                error_code& ec) {
-    const char* p = detail::TrimFront(beg, end);
-    if (p == end) [[unlikely]] {
+  void ParseSpacesBeforeVersion(Argument& arg, error_code& ec) {
+    const char* spaces_beg = arg.buffer_beg + arg.parsed_len;
+    const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
+    if (p == arg.buffer_end) [[unlikely]] {
       ec = Error::kNeedMore;
       return;
     }
-    beg = p;
+    arg.parsed_len += p - spaces_beg;
     state_ = State::kVersion;
   }
 
   /*
-   * @brief Parse http request version.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
-   * @details HTTP's version number consists of two decimal digits separated by
-   *          a "." (period or decimal point). The first digit (major version)
-   *          indicates the messaging syntax, whereas the second digit (minor
-   *          version) indicates the highest minor version within that major
-   *          version to which the sender is conformant (able to understand for
-   *          future communication).
-   *          According to RFC 9112:
-   *                 HTTP-version  = HTTP-name "/" DIGIT "." DIGIT
-   *                 HTTP-name     = %s"HTTP"
-   *          Addition to http version itself, we also need "\r\n" to parse
-   *          together.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9112:
+   *                 HTTP-version  = "HTTP" "/" DIGIT "." DIGIT
+   * Parse http request version. HTTP's version number consists of two decimal
+   * digits separated by a "." (period or decimal point). The first digit (major
+   * version) indicates the messaging syntax, whereas the second digit (minor
+   * version) indicates the highest minor version within that major version to
+   * which the sender is conformant (able to understand for future
+   * communication). Addition to http version itself, we also need "\r\n" to
+   * parse together.
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-protocol-version
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-http-version
    */
-  void ParseVersion(const char*& beg, const char* end, error_code& ec) {
-    if (end - beg < 10) {
+  void ParseVersion(Argument& arg, error_code& ec) {
+    const char* version_beg = arg.buffer_beg + arg.parsed_len;
+    if (arg.buffer_end - version_beg < 10) {
       ec = Error::kNeedMore;
       return;
     }
-    if (beg[0] != 'H' ||              //
-        beg[1] != 'T' ||              //
-        beg[2] != 'T' ||              //
-        beg[3] != 'P' ||              //
-        beg[4] != '/' ||              //
-        std::isdigit(beg[5]) == 0 ||  //
-        beg[6] != '.' ||              //
-        std::isdigit(beg[7]) == 0 ||  //
-        beg[8] != '\r' ||             //
-        beg[9] != '\n') {
+    if (version_beg[0] != 'H' ||              //
+        version_beg[1] != 'T' ||              //
+        version_beg[2] != 'T' ||              //
+        version_beg[3] != 'P' ||              //
+        version_beg[4] != '/' ||              //
+        std::isdigit(version_beg[5]) == 0 ||  //
+        version_beg[6] != '.' ||              //
+        std::isdigit(version_beg[7]) == 0 ||  //
+        version_beg[8] != '\r' ||             //
+        version_beg[9] != '\n') {
       ec = Error::kBadVersion;
       return;
     }
 
-    request_->version = ToHttpVersion(beg[5] - '0', beg[7] - '0');
-    beg += 10;
+    request_->version =
+        ToHttpVersion(version_beg[5] - '0', version_beg[7] - '0');
+    arg.parsed_len += 10;
     state_ = State::kExpectingNewline;
   }
 
   /*
-   * @brief Parse a new line.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
    * @details Parse a new line. If the line is "\r\n", it means that all the
    *          headers have been parsed and the body can be parsed. Otherwise,
    *          the line is still a header line.
    */
-  void ParseExpectingNewLine(const char*& beg, const char* end,
-                             error_code& ec) {
-    if (end - beg < 2) {
+  void ParseExpectingNewLine(Argument& arg, error_code& ec) {
+    const char* line_beg = arg.buffer_beg + arg.parsed_len;
+    if (arg.buffer_end - line_beg < 2) {
       ec = Error::kNeedMore;
       return;
     }
-    if (*beg == '\r' && *(beg + 1) == '\n') {
+    if (*line_beg == '\r' && *(line_beg + 1) == '\n') {
       state_ = State::kBody;
-      beg += 2;
+      arg.parsed_len += 2;
       return;
     }
     state_ = State::kHeader;
   }
 
   /*
-   * @brief Parse http header name.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
-   * @details: A header name labels the corresponding header value as having the
-   * semantics defined by that name. Header names are case-insensitive. In order
-   * to reduce the performance penalty, the library directly stores the header's
-   * lowercase mode, which makes it easier to use the case-insensitive mode. And
-   * the header name is not allowed to be empty.
-   * According to RFC 9110:
-   *       header-name    = tokens
-   * Note that the header name maybe repeated. In this case, its combined header
-   * value consists of the list of corresponding header line values within that
-   * section, concatenated in order, with each header line value separated by a
-   * comma.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details: According to RFC 9110:
+   *                 header-name    = tokens
+   * Parse http header name. A header name labels the corresponding header value
+   * as having the semantics defined by that name. Header names are
+   * case-insensitive. In order to reduce the performance penalty, the library
+   * directly stores the header's lowercase mode, which makes it easier to use
+   * the case-insensitive mode. And the header name is not allowed to be empty.
+   * Any leading whitespace is aslo not allowed. Note that the header name maybe
+   * repeated. In this case, its combined header value consists of the list of
+   * corresponding header line values within that section, concatenated in
+   * order, with each header line value separated by a comma.
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-field-names
    */
-  void ParseHeaderName(const char*& beg, const char* end, error_code& ec) {
-    for (const char* p = beg; p < end; ++p) {
+  void ParseHeaderName(Argument& arg, error_code& ec) {
+    const char* name_beg = arg.buffer_beg + arg.parsed_len;
+    for (const char* p = name_beg; p < arg.buffer_end; ++p) {
       if (*p == ':') {
-        if (p == beg) [[unlikely]] {
+        if (p == name_beg) [[unlikely]] {
           ec = Error::kEmptyHeaderName;
           return;
         }
-        // Save header name to temporary buffer, then insert it to map later.
-        ::memcpy(temp_buffer_.data(), beg, p - beg);
-        temp_len_ = p - beg;
 
-        // Skip the colon.
-        beg = p + 1;
+        // Header name is case-insensitive. Save header name in lowercase.
+        if (p - name_beg > name_.size()) {
+          name_.resize(p - name_beg);
+        }
+        std::transform(name_beg, p, name_.begin(), tolower);
+
+        inner_parsed_len_ += p - name_beg + 1;
         header_state_ = HeaderState::kSpacesBeforeValue;
         return;
       }
@@ -995,26 +1004,25 @@ class Http1MessageParser {
   }
 
   /*
-   * @brief Parse http header value.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
-   * @details HTTP header value consist of a sequence of characters in a format
-   * defined by the field's grammar. A header value does not include leading or
-   * trailing whitespace. And it's not allowed to be empty. When the name is
-   * repeated, the value corresponding to the name is either the last value or a
-   * list of all values, separated by commas.
-   * According to RFC 9110:
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9110:
    *                field-value   = *field-content
    *                field-content = field-vchar
    *                                [ 1*( SP / HTAB / field-vchar ) field-vchar]
    *                field-vchar   = VCHAR / obs-text
    *                VCHAR         = any visible US-ASCII character
    *                obs-text      = %x80-FF
+   * Parse http header value. HTTP header value consist of a sequence of
+   * characters in a format defined by the field's grammar. A header value does
+   * not include leading or trailing whitespace. And it's not allowed to be
+   * empty. When the name is repeated, the value corresponding to the name is
+   * either the last value or a list of all values, separated by commas.
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-field-values
    */
-  void ParseHeaderValue(const char*& beg, const char* end, error_code& ec) {
-    for (const char* p = beg; p < end; ++p) {
+  void ParseHeaderValue(Argument& arg, error_code& ec) {
+    const char* value_beg = arg.buffer_beg + arg.parsed_len + inner_parsed_len_;
+    for (const char* p = value_beg; p < arg.buffer_end; ++p) {
       // Focus only on '\r'.
       if (*p != '\r') {
         continue;
@@ -1027,110 +1035,198 @@ class Http1MessageParser {
       }
 
       // Empty header value.
-      if (whitespace == beg - 1) {
+      if (whitespace == value_beg - 1) {
         ec = Error::kEmptyHeaderValue;
         return;
       }
 
-      // Header name is case-insensitive. Save header name in lowercase.
-      std::string lower_header_name;
-      lower_header_name.resize(temp_len_);
-      std::transform(temp_buffer_.begin(), temp_buffer_.begin() + temp_len_,
-                     lower_header_name.begin(), tolower);
-      std::string header_value{beg, whitespace + 1};
+      std::string header_value{value_beg, whitespace + 1};
 
       // Concat all header values in a list.
-      if (NeedConcatHeaderValue(lower_header_name) &&
-          request_->headers.contains(lower_header_name)) {
-        request_->headers[lower_header_name] += "," + header_value;
+      if (NeedConcatHeaderValue(name_) && request_->headers.contains(name_)) {
+        request_->headers[name_] += "," + header_value;
       } else {
-        // Insert original header name and header value to headers map.
-        request_->headers[lower_header_name] = header_value;
+        request_->headers[name_] = header_value;
       }
-      temp_len_ = 0;
-      beg = p;
+      inner_parsed_len_ += p - value_beg;
       header_state_ = HeaderState::kHeaderLineEnding;
       return;
     }
     ec = Error::kNeedMore;
   }
 
-  void ParseSpacesBeforeHeaderValue(const char*& beg, const char* end,
-                                    error_code& ec) {
-    beg = detail::TrimFront(beg, end);
-    if (beg == end) {
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details Parse spaces between header name and header value.
+   */
+  void ParseSpacesBeforeHeaderValue(Argument& arg, error_code& ec) {
+    const char* spaces_beg =
+        arg.buffer_beg + arg.parsed_len + inner_parsed_len_;
+    const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
+    if (p == arg.buffer_end) {
       ec = Error::kNeedMore;
       return;
     }
+    inner_parsed_len_ += p - spaces_beg;
     header_state_ = HeaderState::kValue;
   }
 
-  void ParseHeaderLineEnding(const char*& beg, const char* end,
-                             error_code& ec) {
-    if (end - beg < 2) {
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9110:
+   *            header line ending = "\r\n"
+   * Parse http header line ending.
+   */
+  void ParseHeaderLineEnding(Argument& arg, error_code& ec) {
+    const char* line_ending_beg =
+        arg.buffer_beg + arg.parsed_len + inner_parsed_len_;
+    if (arg.buffer_end - line_ending_beg < 2) {
       ec = Error::kNeedMore;
       return;
     }
-    if (*beg != '\r' || *(beg + 1) != '\n') {
+    if (*line_ending_beg != '\r' || *(line_ending_beg + 1) != '\n') {
       ec = Error::kBadLineEnding;
       return;
     }
-    beg += 2;
+
+    // After a completed header line successfully parsed, parse some special
+    // headers.
+    ParseSpecialHeaders(name_, ec);
+    if (ec) {
+      return;
+    }
+    arg.parsed_len += inner_parsed_len_ + 2;
+    name_.clear();
+    inner_parsed_len_ = 0;
     header_state_ = HeaderState::kName;
     state_ = State::kExpectingNewline;
   }
 
+  // Note that header name must be lowecase.
+  void ParseSpecialHeaders(const std::string& header_name, error_code& ec) {
+    if (header_name == "content-length") {
+      return ParseHeaderContentLength(ec);
+    }
+
+    if (header_name == "connection") {
+      return ParseHeaderConnection(ec);
+    }
+  }
+
+  void ParseHeaderConnection(error_code& ec) {}
+
+  void ParseHeaderContentLength(error_code& ec) {
+    if (!request_->headers.contains("content-length")) {
+      request_->content_length = 0;
+    }
+
+    std::string_view length_string = request_->headers["content-length"];
+    std::size_t length{0};
+    auto [_, res] =
+        std::from_chars(length_string.begin(), length_string.end(), length);
+    if (res == std::errc()) {
+      request_->content_length = length;
+    } else {
+      ec = Error::kBadContentLength;
+    }
+  }
+
   /*
-   * @brief Parse http headers.
-   * @param[in] beg A pointer to the beginning of the data to be parsed.
-   * @param[in] end A Pointer to the next position from the end of the buffer.
-   * @param[out] ec The error code which holds detailed failure reason.
-   * @details HTTP headers let the client and the server pass additional
-   * information with an HTTP request or response. An HTTP header consists of
-   * it's case-insensitive name followed by a colon (:), then by its value.
-   * Whitespace before the value is ignored. Note that the header name maybe
-   * repeated.
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details Parse http headers. HTTP headers let the client and the server
+   * pass additional information with an HTTP request or response. An HTTP
+   * header consists of it's case-insensitive name followed by a colon (:), then
+   * by its value. Whitespace before the value is ignored. Note that the header
+   * name maybe repeated.
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-fields
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-field-syntax
    */
-  void ParseHeader(const char*& beg, const char* end, error_code& ec) {
-    const char* p = beg;
+  void ParseHeader(Argument& arg, error_code& ec) {
+    inner_parsed_len_ = 0;
+    header_state_ = HeaderState::kName;
     while (!ec) {
       switch (header_state_) {
         case HeaderState::kName: {
-          ParseHeaderName(p, end, ec);
+          ParseHeaderName(arg, ec);
           break;
         }
         case HeaderState::kSpacesBeforeValue: {
-          ParseSpacesBeforeHeaderValue(p, end, ec);
+          ParseSpacesBeforeHeaderValue(arg, ec);
           break;
         }
         case HeaderState::kValue: {
-          ParseHeaderValue(p, end, ec);
+          ParseHeaderValue(arg, ec);
           break;
         }
         case HeaderState::kHeaderLineEnding: {
-          ParseHeaderLineEnding(p, end, ec);
-          if (!ec) {
-            beg = p;
-          }
-          break;
+          ParseHeaderLineEnding(arg, ec);
+          return;
         }
       }  // switch
     }    // while
-    header_state_ = HeaderState::kName;
   }
 
-  void ParseBody(const char*& beg, const char* end, error_code& ec) {}
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9110:
+   *                  message-body = *OCTET
+   *                         OCTET =  any 8-bit sequence of data
+   *
+   *   Parse http header request body. The message body (if any) of an HTTP/1.1
+   * message is used to carry content for the request or response. The message
+   * body is identical to the content unless a transfer coding has been applied.
+   * The rules for determining when a message body is present in an HTTP/1.1
+   * message differ for requests and responses.
+   *   1. The presence of a message body in a REQUEST is signaled by a
+   * Content-Length or Transfer-Encoding header field. Request message framing
+   * is independent of method semantics.
+   *   2. The presence of a message body in a RESPONSE depends on both the
+   * request method to which it is responding and the response status code. This
+   * corresponds to when response content is allowed by HTTP semantics
+   * @see https://datatracker.ietf.org/doc/html/rfc9112#name-message-body
+   */
+  //  WARN: Currently this library only deal with Content-Length case.
+  void ParseBody(Argument& arg, error_code& ec) {
+    if (request_->content_length == 0) {
+      state_ = State::kCompleted;
+      return;
+    }
+    const char* body_beg = arg.buffer_beg + arg.parsed_len;
+    if (arg.buffer_end - body_beg < request_->content_length) {
+      ec = Error::kNeedMore;
+      return;
+    }
+    request_->body.reserve(request_->content_length);
+    request_->body = {body_beg, body_beg + request_->content_length};
+    arg.parsed_len += request_->content_length;
+    state_ = State::kCompleted;
+  }
 
-  State state_{State::kInitial};
-  UriState uri_state_{UriState::kInitial};
-  std::size_t uri_parsed_len_{0};
+  // States.
+  State state_{State::kMethod};
+  UriState uri_state_{UriState::kScheme};
   ParamState param_state_{ParamState::kName};
   HeaderState header_state_{HeaderState::kName};
+
+  // Records the length of the buffer currently parsed, for URI and headers
+  // only. Because both the URI and header contain multiple subparts, different
+  // subparts are parsed by different parsing functions. When parsing a subpart,
+  // we cannot update the parsed_len of the Argument directly, because we do
+  // not know whether the URI or header can be successfully parsed in the end.
+  // However, the subsequent function needs to know the location of the buffer
+  // that the previous function  parsed, which is recorded by this variable.
+  uint32_t inner_parsed_len_{0};
+
+  // Record the parameter name or header name.
+  std::string name_;
+
+  // Inner request. The request pointer must be made available during parser
+  // parsing.
   RequestBase* request_{nullptr};
-  uint32_t temp_len_{0};
-  std::array<char, 8192> temp_buffer_{};
 };
 
 }  // namespace net::http
