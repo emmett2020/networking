@@ -25,9 +25,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "http/http_common.h"
+#include "http1/http_common.h"
 
-namespace net::http {
+namespace net::http1 {
 
 struct Options {
   uint32_t max_length_of_uri_path = 4096;
@@ -121,4 +121,4 @@ struct Request : public RequestBase {
   }
 };
 
-}  // namespace net::http
+}  // namespace net::http1

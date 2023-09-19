@@ -15,17 +15,19 @@
 #include <catch2/catch_test_macros.hpp>
 #include <span>
 #include <system_error>
-#include "http/http1_message_parser.h"
-#include "http/http_common.h"
-#include "http/http_error.h"
-#include "http/http_request.h"
+#include "http1/http_common.h"
+#include "http1/http_error.h"
+#include "http1/http_message_parser.h"
+#include "http1/http_request.h"
 
-using namespace net::http;  // NOLINT
-using namespace std;        // NOLINT
+using namespace net::http1;  // NOLINT
+using namespace std;         // NOLINT
+
+using RequestParser = MessageParser<Request>;
 
 TEST_CASE("Parse http method", "[parse_http_request]") {
   Request req;
-  Http1MessageParser parser{&req};
+  RequestParser parser{&req};
   std::error_code ec{};
 
   SECTION("Parse valid GET method string should return HttpMethod::kGet") {
@@ -34,7 +36,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kGet);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION("Parse valid HEAD method string should return HttpMethod::kHead") {
@@ -43,7 +47,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kHead);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION("Parse valid POST method string should return HttpMethod::kPost") {
@@ -52,7 +58,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kPost);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION("Parse valid PUT method string should return HttpMethod::kPut") {
@@ -61,7 +69,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kPut);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION(
@@ -71,7 +81,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kDelete);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION("Parse valid TRACE method string should return HttpMethod::kTrace") {
@@ -80,7 +92,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kTrace);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION(
@@ -90,7 +104,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kControl);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION("Parse valid PURGE method string should return HttpMethod::kPurge") {
@@ -99,7 +115,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kPurge);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION(
@@ -109,7 +127,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kOptions);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION(
@@ -119,7 +139,9 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
           method.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.method == HttpMethod::kConnect);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 
   SECTION(
@@ -184,37 +206,47 @@ TEST_CASE("Parse http method", "[parse_http_request]") {
     string method = "P";
     CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kMethod);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kMethod);
 
     ec.clear();
     method.push_back('O');
     CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kMethod);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kMethod);
 
     ec.clear();
     method.push_back('S');
     CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kMethod);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kMethod);
 
     ec.clear();
     method.push_back('T');
     CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kMethod);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kMethod);
 
     ec.clear();
     method.push_back(' ');
     CHECK(parser.Parse({method.data(), method.size()}, ec) == 4);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
   }
 }
 
 TEST_CASE("Parse http uri", "[parse_http_request]") {
   Request req;
-  Http1MessageParser parser(&req);
+  RequestParser parser(&req);
   error_code ec{};
 
   SECTION("Uri contains only path. Should fill the path field of request") {
@@ -223,7 +255,10 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
           buffer.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.Path() == "/index.html");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Multi spaces between method and uri is allowed") {
@@ -234,7 +269,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(ec == Error::kNeedMore);
     CHECK(req.Uri() == "/index.html");
     CHECK(req.Path() == "/index.html");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri only contains the http scheme is not allowed.") {
@@ -259,7 +296,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.scheme == HttpScheme::kHttp);
     CHECK(req.Host() == "domain");
     CHECK(req.Uri() == "hTtP://domain");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains https scheme and five spaces after the uri") {
@@ -270,7 +309,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.scheme == HttpScheme::kHttps);
     CHECK(req.Uri() == "https://domain");
     CHECK(req.Host() == "domain");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains unknown scheme name") {
@@ -280,7 +321,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(ec == Error::kNeedMore);
     CHECK(req.Uri() == "0unknown://");
     CHECK(req.scheme == HttpScheme::kUnknown);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains invalid scheme, scheme name use invalid character") {
@@ -304,7 +347,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(ec == Error::kNeedMore);
     CHECK(req.Scheme() == HttpScheme::kHttps);
     CHECK(req.Host() == "domain");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains scheme and dot-decimal style host identifier") {
@@ -314,7 +359,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(ec == Error::kNeedMore);
     CHECK(req.Scheme() == HttpScheme::kHttps);
     CHECK(req.Host() == "1.1.1.1");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Host has not supported character should return kBadHost") {
@@ -334,7 +381,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Scheme() == HttpScheme::kHttps);
     CHECK(req.Host() == "192.168.1.1");
     CHECK(req.Port() == 1080);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains scheme, host and port, port has leading zeros.") {
@@ -346,7 +395,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Scheme() == HttpScheme::kHttps);
     CHECK(req.Host() == "domain");
     CHECK(req.Port() == 1080);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION(
@@ -360,7 +411,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Scheme() == HttpScheme::kHttps);
     CHECK(req.Host() == "domain");
     CHECK(req.Port() == 443);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION(
@@ -373,7 +426,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Scheme() == HttpScheme::kHttp);
     CHECK(req.Host() == "domain");
     CHECK(req.Port() == 80);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION(
@@ -386,7 +441,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Scheme() == HttpScheme::kHttps);
     CHECK(req.Host() == "domain");
     CHECK(req.Port() == 443);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains invalid port format should return bad port.") {
@@ -418,7 +475,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Host() == "domain");
     CHECK(req.Path() == "/index.html");
     CHECK(req.Port() == 80);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains scheme, host, port and path") {
@@ -432,7 +491,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Host() == "domain");
     CHECK(req.Path() == "/index.html");
     CHECK(req.Port() == 10800);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains only path") {
@@ -448,7 +509,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Host() == "");
     CHECK(req.Path() == "/index.html");
     CHECK(req.Port() == 80);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains non supported path character should return kBadPath") {
@@ -473,7 +536,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.ContainsParam("key2"));
     CHECK(req.ParamValue("key1").value() == "val1");
     CHECK(req.ParamValue("key2").value() == "val2");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Uri contains path and parameters, the parameter has empty key") {
@@ -490,7 +555,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Params().size() == 1);
     CHECK(req.ContainsParam(""));
     CHECK(req.ParamValue("").value() == "val");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION(
@@ -503,6 +570,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Params().size() == 1);
     CHECK(req.ContainsParam("key"));
     CHECK(req.ParamValue("key").value() == "");
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
   }
 
   SECTION("Uri contains path and parameters, the parameter has empty value") {
@@ -513,6 +581,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Params().size() == 1);
     CHECK(req.ContainsParam("key"));
     CHECK(req.ParamValue("key").value() == "");
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
   }
 
   SECTION(
@@ -523,6 +592,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
           buffer.size() - 1);
     CHECK(ec == Error::kNeedMore);
     CHECK(req.Params().size() == 0);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
   }
 
   SECTION(
@@ -535,6 +605,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Params().size() == 1);
     CHECK(req.ContainsParam(""));
     CHECK(req.ParamValue("") == "==");
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
   }
 
   SECTION(
@@ -547,6 +618,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Params().size() == 1);
     CHECK(req.ContainsParam(""));
     CHECK(req.ParamValue("") == "");
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
   }
 
   SECTION("Uri contains path and parameters, the parameters has repeated key") {
@@ -557,6 +629,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Params().size() == 1);
     CHECK(req.ContainsParam("key"));
     CHECK(req.ParamValue("key") == "val1");
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
   }
 
   SECTION("Uri contains non supported parameter token should kBadParameter") {
@@ -580,6 +653,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.ContainsParam("key1"));
     CHECK(req.ParamValue("key0") == "val0");
     CHECK(req.ParamValue("key1") == "val1");
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
   }
 
   SECTION("Uri contains path and a parameter") {
@@ -596,20 +670,26 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     CHECK(req.Params().size() == 1);
     CHECK(req.ContainsParam("key"));
     CHECK(req.ParamValue("key").value() == "val");
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
   }
 
   SECTION("Step by step parse uri") {
     string buffer = "PO";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kMethod);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kMethod);
 
     ec.clear();
     buffer += "ST ";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 4);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeUri);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeUri);
 
     ec.clear();
     // Skip the parsed size in buffer.
@@ -617,8 +697,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     buffer += "htt";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kUri);
-    CHECK(parser.uri_state_ == Http1MessageParser::UriState::kScheme);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
+    CHECK(parser.uri_state_ == RequestParser::UriState::kScheme);
     CHECK(parser.inner_parsed_len_ == 0);
 
     ec.clear();
@@ -626,8 +707,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     buffer += "p://dom";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kUri);
-    CHECK(parser.uri_state_ == Http1MessageParser::UriState::kHost);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
+    CHECK(parser.uri_state_ == RequestParser::UriState::kHost);
     CHECK(parser.inner_parsed_len_ == 7);
 
     ec.clear();
@@ -635,8 +717,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     buffer += "ain:10";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kUri);
-    CHECK(parser.uri_state_ == Http1MessageParser::UriState::kPort);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
+    CHECK(parser.uri_state_ == RequestParser::UriState::kPort);
     // The "http://domain:" is done.
     CHECK(parser.inner_parsed_len_ == 7 + 7);
 
@@ -645,8 +728,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     buffer += "80/index";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kUri);
-    CHECK(parser.uri_state_ == Http1MessageParser::UriState::kPath);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
+    CHECK(parser.uri_state_ == RequestParser::UriState::kPath);
     // The "http://domain:1080" is done.
     CHECK(parser.inner_parsed_len_ == 7 + 7 + 4);
 
@@ -655,8 +739,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     buffer += ".html?";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kUri);
-    CHECK(parser.uri_state_ == Http1MessageParser::UriState::kParams);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
+    CHECK(parser.uri_state_ == RequestParser::UriState::kParams);
     // The "http://domain:1080/index.html?" is done.
     CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12);
 
@@ -665,8 +750,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     buffer += "key";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kUri);
-    CHECK(parser.uri_state_ == Http1MessageParser::UriState::kParams);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
+    CHECK(parser.uri_state_ == RequestParser::UriState::kParams);
     // The "http://domain:1080/index.html?" is done.
     CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12);
 
@@ -675,8 +761,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     buffer += "=";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kUri);
-    CHECK(parser.uri_state_ == Http1MessageParser::UriState::kParams);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
+    CHECK(parser.uri_state_ == RequestParser::UriState::kParams);
     // The "http://domain:1080/index.html?" is done.
     CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12 + 4);
 
@@ -685,7 +772,9 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
     buffer += "val ";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 37);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kSpacesBeforeHttpVersion);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    CHECK(parser.request_line_state_ ==
+          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
     // The "http://domain:1080/index.html?key=val " is done.
     CHECK(parser.inner_parsed_len_ == 0);
 
@@ -702,7 +791,7 @@ TEST_CASE("Parse http uri", "[parse_http_request]") {
 
 TEST_CASE("Parse http version", "[parse_http_request]") {
   Request req;
-  Http1MessageParser parser(&req);
+  RequestParser parser(&req);
   error_code ec{};
 
   SECTION("Parse http version 1.0") {
@@ -713,7 +802,8 @@ TEST_CASE("Parse http version", "[parse_http_request]") {
     CHECK(req.Uri() == "/index.html");
     CHECK(req.Path() == "/index.html");
     CHECK(req.Version() == HttpVersion::kHttp10);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
   }
 
   SECTION("Parse http version 1.1") {
@@ -724,7 +814,8 @@ TEST_CASE("Parse http version", "[parse_http_request]") {
     CHECK(req.Uri() == "/index.html");
     CHECK(req.Path() == "/index.html");
     CHECK(req.Version() == HttpVersion::kHttp11);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
   }
 
   SECTION("Multiply spaces between http version and uri are allowed") {
@@ -735,7 +826,8 @@ TEST_CASE("Parse http version", "[parse_http_request]") {
     CHECK(req.Uri() == "/index.html");
     CHECK(req.Path() == "/index.html");
     CHECK(req.Version() == HttpVersion::kHttp11);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
   }
 
   SECTION("Parse invalid http version should return kBadVersion") {
@@ -753,7 +845,7 @@ TEST_CASE("Parse http version", "[parse_http_request]") {
 
 TEST_CASE("Parse http headers", "[parse_http_request]") {
   Request req;
-  Http1MessageParser parser(&req);
+  RequestParser parser(&req);
   error_code ec{};
 
   SECTION("Parse http header Host") {
@@ -762,7 +854,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Host: 1.1.1.1\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.Headers().size() == 1);
     CHECK(req.ContainsHeader("Host"));
     CHECK(req.HeaderValue("Host") == "1.1.1.1");
@@ -802,7 +895,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "x:y\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.Headers().size() == 1);
     CHECK(req.ContainsHeader("x"));
     CHECK(req.HeaderValue("x") == "y");
@@ -814,7 +908,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Host:     1.1.1.1\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.Headers().size() == 1);
     CHECK(req.ContainsHeader("Host"));
     CHECK(req.HeaderValue("Host") == "1.1.1.1");
@@ -826,7 +921,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Host: 1.1.1.1     \r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.Headers().size() == 1);
     CHECK(req.ContainsHeader("Host"));
     CHECK(req.HeaderValue("Host") == "1.1.1.1");
@@ -838,7 +934,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Host: 1.1.1.1\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.Headers().size() == 1);
     CHECK(req.ContainsHeader("Host"));
     CHECK(req.HeaderValue("Host") == "1.1.1.1");
@@ -853,7 +950,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Host: 2.2.2.2\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.Headers().size() == 1);
     CHECK(req.ContainsHeader("Host"));
     CHECK(req.HeaderValue("Host") == "2.2.2.2");
@@ -868,7 +966,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "hoST: 2.2.2.2\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.Headers().size() == 1);
     CHECK(req.ContainsHeader("Host"));
     CHECK(req.HeaderValue("Host") == "2.2.2.2");
@@ -889,7 +988,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Server:mock\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.Headers().size() == 2);
     CHECK(req.ContainsHeader("Host"));
     CHECK(req.HeaderValue("Host") == "1.1.1.1");
@@ -905,7 +1005,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Accept: image/*\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Accept"));
     CHECK(req.HeaderValue("Accept") == "image/*");
   }
@@ -918,7 +1019,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Accept-Encoding: gzip\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Accept-Encoding"));
     CHECK(req.HeaderValue("Accept-Encoding") == "gzip");
   }
@@ -931,7 +1033,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Accept-Encoding: compress\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Accept-Encoding"));
     CHECK(req.HeaderValue("Accept-Encoding") == "compress");
   }
@@ -944,7 +1047,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Accept-Encoding: deflate\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Accept-Encoding"));
     CHECK(req.HeaderValue("Accept-Encoding") == "deflate");
   }
@@ -957,7 +1061,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Accept-Encoding: br\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Accept-Encoding"));
     CHECK(req.HeaderValue("Accept-Encoding") == "br");
   }
@@ -970,7 +1075,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Accept-Encoding: identity\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Accept-Encoding"));
     CHECK(req.HeaderValue("Accept-Encoding") == "identity");
   }
@@ -983,7 +1089,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Accept-Encoding: *\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Accept-Encoding"));
     CHECK(req.HeaderValue("Accept-Encoding") == "*");
   }
@@ -999,7 +1106,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Accept-Encoding:gzip\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Accept-Encoding"));
     CHECK(req.HeaderValue("Accept-Encoding") == "*,gzip");
   }
@@ -1010,7 +1118,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Connection: Keep-Alive\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Connection"));
     CHECK(req.HeaderValue("Connection") == "Keep-Alive");
   }
@@ -1021,7 +1130,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Content-Encoding: gzip\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Content-Encoding"));
     CHECK(req.HeaderValue("Content-Encoding") == "gzip");
   }
@@ -1032,7 +1142,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Content-Type: text/html;charset=utf-8\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Content-Type"));
     CHECK(req.HeaderValue("Content-Type") == "text/html;charset=utf-8");
   }
@@ -1043,7 +1154,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Content-Length: 120\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Content-Length"));
     CHECK(req.HeaderValue("Content-Length") == "120");
     CHECK(req.content_length == 120);
@@ -1075,7 +1187,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
         "Date: Thu, 11 Aug 2016 15:23:13 GMT\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
     CHECK(req.ContainsHeader("Date"));
     CHECK(req.HeaderValue("Date") == "Thu, 11 Aug 2016 15:23:13 GMT");
   }
@@ -1084,7 +1197,8 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
     string buffer = "GET /index.html HTTP/1.1\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
 
     // Skip the parsed data.
     buffer = "";
@@ -1094,48 +1208,49 @@ TEST_CASE("Parse http headers", "[parse_http_request]") {
     ec.clear();
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kHeader);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
 
     // Buffer: Host
     buffer += "st";
     ec.clear();
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kHeader);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
 
     // Buffer: Host:
     buffer += ":";
     ec.clear();
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kHeader);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
 
     // Buffer: Host:192.168.1.1
     buffer += "192.168.1.1";
     ec.clear();
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kHeader);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
 
     // Buffer: Host:192.168.1.1\r
     buffer += "\r";
     ec.clear();
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 0);
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kHeader);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
 
     // Buffer: Host:192.168.1.1\r\n
     buffer += "\n";
     ec.clear();
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == Error::kNeedMore);
-    CHECK(parser.state_ == Http1MessageParser::State::kExpectingNewline);
+    CHECK(parser.message_state_ ==
+          RequestParser::MessageState::kExpectingNewline);
   }
 }
 
 TEST_CASE("parse http request body") {
   Request req;
-  Http1MessageParser parser(&req);
+  RequestParser parser(&req);
   error_code ec{};
 
   SECTION("No Content-Length header means no request body") {
@@ -1144,7 +1259,7 @@ TEST_CASE("parse http request body") {
         "\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == std::errc{});
-    CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kCompleted);
     CHECK(req.body == "");
   }
 
@@ -1155,7 +1270,7 @@ TEST_CASE("parse http request body") {
         "\r\n";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == std::errc{});
-    CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kCompleted);
     CHECK(req.body == "");
   }
 
@@ -1167,7 +1282,7 @@ TEST_CASE("parse http request body") {
         "Hello World";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == std::errc{});
-    CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kCompleted);
     CHECK(req.content_length == 11);
     CHECK(req.body == "Hello World");
   }
@@ -1180,7 +1295,7 @@ TEST_CASE("parse http request body") {
         "Hello World";
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 48);
     CHECK(ec == std::errc{});
-    CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(parser.message_state_ == RequestParser::MessageState::kCompleted);
     CHECK(req.content_length == 1);
     CHECK(req.body == "H");
   }

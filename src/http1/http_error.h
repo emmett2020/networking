@@ -18,7 +18,7 @@
 #include <string>
 #include <system_error>  // NOLINT
 
-namespace net::http {
+namespace net::http1 {
 // Error codes returned from HTTP algorithms and operations.
 enum class Error {
   kSuccess = 0,
@@ -161,17 +161,17 @@ class HttpErrorCategory : public std::error_category {
   }
 };
 
-inline std::error_code make_error_code(net::http::Error err) {  // NOLINT
-  static net::http::HttpErrorCategory category{};
-  return {static_cast<std::underlying_type<net::http::Error>::type>(err),
+inline std::error_code make_error_code(net::http1::Error err) {  // NOLINT
+  static net::http1::HttpErrorCategory category{};
+  return {static_cast<std::underlying_type<net::http1::Error>::type>(err),
           category};
 }
 
-}  // namespace net::http
+}  // namespace net::http1
 
 namespace std {
 template <>
-struct is_error_code_enum<net::http::Error> {
+struct is_error_code_enum<net::http1::Error> {
   static bool const value = true;  // NOLINT
 };
 }  // namespace std

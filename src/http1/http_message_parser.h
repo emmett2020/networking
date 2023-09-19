@@ -30,13 +30,14 @@
 #include <tuple>
 #include <utility>
 
-#include "http/http_common.h"
-#include "http/http_error.h"
-#include "http/http_request.h"
+#include "http1/http_common.h"
+#include "http1/http_error.h"
+#include "http1/http_request.h"
+#include "http1/http_response.h"
 
 // TODO(xiaoming): Refactor all documents. Remove the text we copied.
 
-namespace net::http {
+namespace net::http1 {
 namespace detail {
 
 /*
@@ -300,75 +301,93 @@ using std::error_code;
  * @see whatwg URL specification: https://url.spec.whatwg.org/#urls
  */
 
-class Http1MessageParser {
+template <typename T>
+concept http_response = requires(T& t) {
+  { t.body } -> std::same_as<std::string>;
+  { t.content_length } -> std::same_as<std::size_t>;
+  { t.headers } -> std::same_as<std::unordered_map<std::string, std::string>>;
+  { t.version } -> std::same_as<HttpVersion>;
+  { t.status_code } -> std::same_as<HttpStatusCode>;
+  { t.reason } -> std::same_as<std::string>;
+};
+
+template <typename T>
+concept http_request = requires(T& t) {
+  { t.method } -> std::convertible_to<HttpMethod>;
+  { t.scheme } -> std::convertible_to<HttpScheme>;
+  { t.version } -> std::convertible_to<HttpVersion>;
+  { t.port } -> std::convertible_to<uint16_t>;
+  { t.host } -> std::convertible_to<std::string>;
+  { t.path } -> std::convertible_to<std::string>;
+  { t.uri } -> std::convertible_to<std::string>;
+  { t.body } -> std::convertible_to<std::string>;
+  { t.content_length } -> std::convertible_to<std::size_t>;
+  {
+    t.headers
+  } -> std::convertible_to<std::unordered_map<std::string, std::string>>;
+  {
+    t.params
+  } -> std::convertible_to<std::unordered_map<std::string, std::string>>;
+};
+
+template <typename T>
+concept http_message = http_response<T> || http_request<T>;
+
+template <http_message Message>
+class MessageParser {
  public:
-  explicit Http1MessageParser(RequestBase* request) noexcept
-      : request_(request) {
+  explicit MessageParser(Message* message) noexcept : message_(message) {
     name_.reserve(8192);
   }
 
-  void Reset(RequestBase* request) noexcept {
-    request_ = request;
+  void Reset(Message* message) noexcept {
+    message_ = message;
     Reset();
   }
 
   void Reset() noexcept {
-    state_ = State::kMethod;
+    message_state_ = MessageState::kStartLine;
     header_state_ = HeaderState::kName;
-    uri_state_ = UriState::kScheme;
+    uri_state_ = UriState::kInitial;
     param_state_ = ParamState::kName;
     inner_parsed_len_ = 0;
     name_.clear();
   }
 
-  [[nodiscard]] RequestBase* AssociatedRequest() const noexcept {
-    return request_;
-  }
+  [[nodiscard]] Message* AssociatedMessage() const noexcept { return message_; }
 
   std::size_t Parse(std::span<char> buffer, error_code& ec) {
     assert(!ec &&
-           "net::http::Http1MessageParser::parse() failed. The parameter ec "
-           "should be clear.");
+           "net::http1::MessageParser::parse() failed. The parameter ec should "
+           "be clear.");
     Argument arg{
         .buffer_beg = buffer.data(),
         .buffer_end = buffer.data() + buffer.size(),
         .parsed_len = 0,
     };
     while (!ec) {
-      switch (state_) {
-        case State::kMethod: {
-          ParseMethod(arg, ec);
+      switch (message_state_) {
+        case MessageState::kStartLine: {
+          if constexpr (http_request<Message>) {
+            ParseRequestLine(arg, ec);
+          } else {
+            ParseStatusLine(arg, ec);
+          }
           break;
         }
-        case State::kSpacesBeforeUri: {
-          ParseSpacesBeforeUri(arg, ec);
-          break;
-        }
-        case State::kUri: {
-          ParseUri(arg, ec);
-          break;
-        }
-        case State::kSpacesBeforeHttpVersion: {
-          ParseSpacesBeforeVersion(arg, ec);
-          break;
-        }
-        case State::kVersion: {
-          ParseVersion(arg, ec);
-          break;
-        }
-        case State::kExpectingNewline: {
+        case MessageState::kExpectingNewline: {
           ParseExpectingNewLine(arg, ec);
           break;
         }
-        case State::kHeader: {
+        case MessageState::kHeader: {
           ParseHeader(arg, ec);
           break;
         }
-        case State::kBody: {
+        case MessageState::kBody: {
           ParseBody(arg, ec);
           break;
         }
-        case State::kCompleted: {
+        case MessageState::kCompleted: {
           return arg.parsed_len;
         }
       }
@@ -384,19 +403,37 @@ class Http1MessageParser {
     std::size_t parsed_len{0};
   };
 
-  enum class State {
+  enum class MessageState {
+    kStartLine,
+    kHeader,
+    kExpectingNewline,
+    kBody,
+    kCompleted
+  };
+
+  enum class RequestLineState {
     kMethod,
     kSpacesBeforeUri,
     kUri,
     kSpacesBeforeHttpVersion,
     kVersion,
-    kHeader,
-    kBody,
-    kExpectingNewline,
-    kCompleted
   };
 
-  enum class UriState { kScheme, kHost, kPort, kPath, kParams, kCompleted };
+  enum class StatusLineState {
+    kVersion,
+    kStatusCode,
+    kReason,
+  };
+
+  enum class UriState {
+    kInitial,
+    kScheme,
+    kHost,
+    kPort,
+    kPath,
+    kParams,
+    kCompleted
+  };
 
   enum class HeaderState {
     kName,
@@ -406,6 +443,33 @@ class Http1MessageParser {
   };
 
   enum class ParamState { kName, kValue, kCompleted };
+
+  void ParseRequestLine(Argument& arg, error_code& ec) {
+    while (!ec) {
+      switch (request_line_state_) {
+        case RequestLineState::kMethod: {
+          ParseMethod(arg, ec);
+          break;
+        }
+        case RequestLineState::kSpacesBeforeUri: {
+          ParseSpacesBeforeUri(arg, ec);
+          break;
+        }
+        case RequestLineState::kUri: {
+          ParseUri(arg, ec);
+          break;
+        }
+        case RequestLineState::kSpacesBeforeHttpVersion: {
+          ParseSpacesBeforeVersion(arg, ec);
+          break;
+        }
+        case RequestLineState::kVersion: {
+          ParseVersion(arg, ec);
+          return;
+        }
+      }
+    }
+  }
 
   /*
    * @param arg Records information about the currently parsed buffer.
@@ -419,6 +483,7 @@ class Http1MessageParser {
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-method
    */
   void ParseMethod(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* method_beg = arg.buffer_beg + arg.parsed_len;
     for (const char* p = method_beg; p < arg.buffer_end; ++p) {
       // Collect method string until met first non-method charater.
@@ -438,14 +503,14 @@ class Http1MessageParser {
         return;
       }
 
-      request_->method = detail::ToHttpMethod(method_beg, p);
-      if (request_->method == HttpMethod::kUnknown) {
+      message_->method = detail::ToHttpMethod(method_beg, p);
+      if (message_->method == HttpMethod::kUnknown) {
         ec = Error::kBadMethod;
         return;
       }
 
       arg.parsed_len += p - method_beg;
-      state_ = State::kSpacesBeforeUri;
+      request_line_state_ = RequestLineState::kSpacesBeforeUri;
       return;
     }
     ec = Error::kNeedMore;
@@ -458,6 +523,7 @@ class Http1MessageParser {
    * allowd between method and URI.
    */
   void ParseSpacesBeforeUri(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* spaces_beg = arg.buffer_beg + arg.parsed_len;
     const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
     if (p == arg.buffer_end) [[unlikely]] {
@@ -465,7 +531,7 @@ class Http1MessageParser {
       return;
     }
     arg.parsed_len += p - spaces_beg;
-    state_ = State::kUri;
+    request_line_state_ = RequestLineState::kUri;
   }
 
   /*
@@ -482,22 +548,26 @@ class Http1MessageParser {
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-target
    */
   void ParseUri(Argument& arg, error_code& ec) noexcept {
+    static_assert(http_request<Message>);
     const char* uri_beg = arg.buffer_beg + arg.parsed_len;
     if (uri_beg >= arg.buffer_end) {
       ec = Error::kNeedMore;
       return;
     }
 
-    if (*uri_beg == '/') {
-      request_->port = 80;
-      uri_state_ = UriState::kPath;
-    } else {
-      uri_state_ = UriState::kScheme;
-    }
-    inner_parsed_len_ = 0;
-
+    uri_state_ = UriState::kInitial;
     while (!ec) {
       switch (uri_state_) {
+        case UriState::kInitial: {
+          if (*uri_beg == '/') {
+            message_->port = 80;
+            uri_state_ = UriState::kPath;
+          } else {
+            uri_state_ = UriState::kScheme;
+          }
+          inner_parsed_len_ = 0;
+          break;
+        }
         case UriState::kScheme: {
           ParseScheme(arg, ec);
           break;
@@ -519,8 +589,8 @@ class Http1MessageParser {
           break;
         }
         case UriState::kCompleted: {
-          state_ = State::kSpacesBeforeHttpVersion;
-          request_->uri = {uri_beg, uri_beg + inner_parsed_len_};
+          request_line_state_ = RequestLineState::kSpacesBeforeHttpVersion;
+          message_->uri = {uri_beg, uri_beg + inner_parsed_len_};
           arg.parsed_len += inner_parsed_len_;
           inner_parsed_len_ = 0;
           return;
@@ -541,6 +611,7 @@ class Http1MessageParser {
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
    */
   void ParseScheme(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* uri_beg = arg.buffer_beg + arg.parsed_len;
     const char* scheme_beg = uri_beg + inner_parsed_len_;
     for (const char* p = scheme_beg; p < arg.buffer_end; ++p) {
@@ -565,11 +636,11 @@ class Http1MessageParser {
 
       uint32_t scheme_len = p - scheme_beg;
       if (scheme_len >= 5 && detail::CaseCompareHttpChar(scheme_beg)) {
-        request_->scheme = HttpScheme::kHttps;
+        message_->scheme = HttpScheme::kHttps;
       } else if (scheme_len >= 4 && detail::CaseCompareHttpChar(scheme_beg)) {
-        request_->scheme = HttpScheme::kHttp;
+        message_->scheme = HttpScheme::kHttp;
       } else {
-        request_->scheme = HttpScheme::kUnknown;
+        message_->scheme = HttpScheme::kUnknown;
       }
 
       inner_parsed_len_ = scheme_len + 3;
@@ -594,6 +665,7 @@ class Http1MessageParser {
    * https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
    */
   void ParseHost(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* uri_beg = arg.buffer_beg + arg.parsed_len;
     const char* host_beg = uri_beg + inner_parsed_len_;
     for (const char* p = host_beg; p < arg.buffer_end; ++p) {
@@ -611,15 +683,15 @@ class Http1MessageParser {
       }
 
       // A empty host is not allowed at "http" scheme and "https" scheme.
-      if (p == host_beg && (request_->scheme == HttpScheme::kHttp ||
-                            request_->scheme == HttpScheme::kHttps)) {
+      if (p == host_beg && (message_->scheme == HttpScheme::kHttp ||
+                            message_->scheme == HttpScheme::kHttps)) {
         ec = Error::kBadHost;
         return;
       }
 
       // Fill host field of inner request.
       uint32_t host_len = p - host_beg;
-      request_->host = {host_beg, p};
+      message_->host = {host_beg, p};
 
       // Go to next state depends on the first charater after host identifier.
       switch (*p) {
@@ -628,17 +700,17 @@ class Http1MessageParser {
           uri_state_ = UriState::kPort;
           return;
         case '/':
-          request_->port = detail::GetDefaultPortByHttpScheme(request_->scheme);
+          message_->port = detail::GetDefaultPortByHttpScheme(message_->scheme);
           inner_parsed_len_ += host_len;
           uri_state_ = UriState::kPath;
           return;
         case '?':
-          request_->port = detail::GetDefaultPortByHttpScheme(request_->scheme);
+          message_->port = detail::GetDefaultPortByHttpScheme(message_->scheme);
           inner_parsed_len_ += host_len + 1;
           uri_state_ = UriState::kParams;
           return;
         case ' ':
-          request_->port = detail::GetDefaultPortByHttpScheme(request_->scheme);
+          message_->port = detail::GetDefaultPortByHttpScheme(message_->scheme);
           inner_parsed_len_ += host_len;
           uri_state_ = UriState::kCompleted;
           return;
@@ -662,6 +734,7 @@ class Http1MessageParser {
    * https://datatracker.ietf.org/doc/html/rfc9110#name-authoritative-access
    */
   void ParsePort(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     uint16_t acc = 0;
     uint16_t cur = 0;
 
@@ -688,9 +761,9 @@ class Http1MessageParser {
 
       // Port is zero, so use default port value based on scheme.
       if (acc == 0) {
-        acc = detail::GetDefaultPortByHttpScheme(request_->scheme);
+        acc = detail::GetDefaultPortByHttpScheme(message_->scheme);
       }
-      request_->port = acc;
+      message_->port = acc;
       uint32_t port_string_len = p - port_beg;
       switch (*p) {
         case '/': {
@@ -723,18 +796,19 @@ class Http1MessageParser {
    * string. If no error occurs, the inner request's path field will be filled.
    */
   void ParsePath(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* const uri_beg = arg.buffer_beg + arg.parsed_len;
     const char* path_beg = uri_beg + inner_parsed_len_;
     for (const char* p = path_beg; p < arg.buffer_end; ++p) {
       if (*p == '?') {
         inner_parsed_len_ += p - path_beg + 1;
-        request_->path = {path_beg, p};
+        message_->path = {path_beg, p};
         uri_state_ = UriState::kParams;
         return;
       }
       if (*p == ' ') {
         inner_parsed_len_ += p - path_beg;
-        request_->path = {path_beg, p};
+        message_->path = {path_beg, p};
         uri_state_ = UriState::kCompleted;
         return;
       }
@@ -757,6 +831,7 @@ class Http1MessageParser {
    * do when there is a repeated key, we just use the last-occur policy now.
    */
   void ParseParamName(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* uri_beg = arg.buffer_beg + arg.parsed_len;
     const char* name_beg = uri_beg + inner_parsed_len_;
     for (const char* p = name_beg; p < arg.buffer_end; ++p) {
@@ -772,7 +847,7 @@ class Http1MessageParser {
         // characters in ampersand (except ampersand) are considered
         // parameter names.
         name_ = {name_beg, p};
-        request_->params[name_] = "";
+        message_->params[name_] = "";
         inner_parsed_len_ += p - name_beg + 1;
         return;
       }
@@ -789,7 +864,7 @@ class Http1MessageParser {
         // them as parameter name.
         if (name_beg != p) {
           name_ = {name_beg, p};
-          request_->params[name_] = "";
+          message_->params[name_] = "";
         }
         inner_parsed_len_ += p - name_beg;
         param_state_ = ParamState::kCompleted;
@@ -813,17 +888,18 @@ class Http1MessageParser {
    *                               ; optional whitespace
    */
   void ParseParamValue(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* uri_beg = arg.buffer_beg + arg.parsed_len;
     const char* value_beg = uri_beg + inner_parsed_len_;
     for (const char* p = value_beg; p < arg.buffer_end; ++p) {
       if (*p == '&') {
-        request_->params[name_] = {value_beg, p};
+        message_->params[name_] = {value_beg, p};
         inner_parsed_len_ += p - value_beg + 1;
         param_state_ = ParamState::kName;
         return;
       }
       if (*p == ' ') {
-        request_->params[name_] = {value_beg, p};
+        message_->params[name_] = {value_beg, p};
         inner_parsed_len_ += p - value_beg;
         param_state_ = ParamState::kCompleted;
         return;
@@ -851,6 +927,7 @@ class Http1MessageParser {
    *           https://url.spec.whatwg.org/#query-state
    */
   void ParseParams(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     param_state_ = ParamState::kName;
     while (!ec) {
       switch (param_state_) {
@@ -878,6 +955,7 @@ class Http1MessageParser {
    * allowd between uri and http version.
    */
   void ParseSpacesBeforeVersion(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* spaces_beg = arg.buffer_beg + arg.parsed_len;
     const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
     if (p == arg.buffer_end) [[unlikely]] {
@@ -885,7 +963,7 @@ class Http1MessageParser {
       return;
     }
     arg.parsed_len += p - spaces_beg;
-    state_ = State::kVersion;
+    request_line_state_ = RequestLineState::kVersion;
   }
 
   /*
@@ -904,6 +982,7 @@ class Http1MessageParser {
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-http-version
    */
   void ParseVersion(Argument& arg, error_code& ec) {
+    static_assert(http_request<Message>);
     const char* version_beg = arg.buffer_beg + arg.parsed_len;
     if (arg.buffer_end - version_beg < 10) {
       ec = Error::kNeedMore;
@@ -923,11 +1002,13 @@ class Http1MessageParser {
       return;
     }
 
-    request_->version =
+    message_->version =
         ToHttpVersion(version_beg[5] - '0', version_beg[7] - '0');
     arg.parsed_len += 10;
-    state_ = State::kExpectingNewline;
+    message_state_ = MessageState::kExpectingNewline;
   }
+
+  void ParseStatusLine(Argument& arg, error_code& ec) {}
 
   /*
    * @param arg Records information about the currently parsed buffer.
@@ -943,11 +1024,11 @@ class Http1MessageParser {
       return;
     }
     if (*line_beg == '\r' && *(line_beg + 1) == '\n') {
-      state_ = State::kBody;
+      message_state_ = MessageState::kBody;
       arg.parsed_len += 2;
       return;
     }
-    state_ = State::kHeader;
+    message_state_ = MessageState::kHeader;
   }
 
   /*
@@ -1043,10 +1124,10 @@ class Http1MessageParser {
       std::string header_value{value_beg, whitespace + 1};
 
       // Concat all header values in a list.
-      if (NeedConcatHeaderValue(name_) && request_->headers.contains(name_)) {
-        request_->headers[name_] += "," + header_value;
+      if (NeedConcatHeaderValue(name_) && message_->headers.contains(name_)) {
+        message_->headers[name_] += "," + header_value;
       } else {
-        request_->headers[name_] = header_value;
+        message_->headers[name_] = header_value;
       }
       inner_parsed_len_ += p - value_beg;
       header_state_ = HeaderState::kHeaderLineEnding;
@@ -1101,7 +1182,7 @@ class Http1MessageParser {
     name_.clear();
     inner_parsed_len_ = 0;
     header_state_ = HeaderState::kName;
-    state_ = State::kExpectingNewline;
+    message_state_ = MessageState::kExpectingNewline;
   }
 
   // Note that header name must be lowecase.
@@ -1118,16 +1199,16 @@ class Http1MessageParser {
   void ParseHeaderConnection(error_code& ec) {}
 
   void ParseHeaderContentLength(error_code& ec) {
-    if (!request_->headers.contains("content-length")) {
-      request_->content_length = 0;
+    if (!message_->headers.contains("content-length")) {
+      message_->content_length = 0;
     }
 
-    std::string_view length_string = request_->headers["content-length"];
+    std::string_view length_string = message_->headers["content-length"];
     std::size_t length{0};
     auto [_, res] =
         std::from_chars(length_string.begin(), length_string.end(), length);
     if (res == std::errc()) {
-      request_->content_length = length;
+      message_->content_length = length;
     } else {
       ec = Error::kBadContentLength;
     }
@@ -1191,24 +1272,25 @@ class Http1MessageParser {
    */
   //  WARN: Currently this library only deal with Content-Length case.
   void ParseBody(Argument& arg, error_code& ec) {
-    if (request_->content_length == 0) {
-      state_ = State::kCompleted;
+    if (message_->content_length == 0) {
+      message_state_ = MessageState::kCompleted;
       return;
     }
     const char* body_beg = arg.buffer_beg + arg.parsed_len;
-    if (arg.buffer_end - body_beg < request_->content_length) {
+    if (arg.buffer_end - body_beg < message_->content_length) {
       ec = Error::kNeedMore;
       return;
     }
-    request_->body.reserve(request_->content_length);
-    request_->body = {body_beg, body_beg + request_->content_length};
-    arg.parsed_len += request_->content_length;
-    state_ = State::kCompleted;
+    message_->body.reserve(message_->content_length);
+    message_->body = {body_beg, body_beg + message_->content_length};
+    arg.parsed_len += message_->content_length;
+    message_state_ = MessageState::kCompleted;
   }
 
   // States.
-  State state_{State::kMethod};
-  UriState uri_state_{UriState::kScheme};
+  MessageState message_state_{MessageState::kStartLine};
+  RequestLineState request_line_state_{RequestLineState::kMethod};
+  UriState uri_state_{UriState::kInitial};
   ParamState param_state_{ParamState::kName};
   HeaderState header_state_{HeaderState::kName};
 
@@ -1226,7 +1308,6 @@ class Http1MessageParser {
 
   // Inner request. The request pointer must be made available during parser
   // parsing.
-  RequestBase* request_{nullptr};
+  Message* message_{nullptr};
 };
-
-}  // namespace net::http
+}  // namespace net::http1

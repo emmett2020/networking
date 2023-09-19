@@ -23,7 +23,7 @@
 
 #include <magic_enum.hpp>
 
-namespace net::http {
+namespace net::http1 {
 
 enum class HttpScheme { kHttp, kHttps, kUnknown };
 
@@ -336,4 +336,4 @@ static constexpr std::string_view kHttpHeaderIdentity = "identity";
 static constexpr std::string_view kHttpHeaderKeepalive = "keep-alive";
 static constexpr std::string_view kHttpHeaderClose = "close";
 
-};  // namespace net::http
+};  // namespace net::http1

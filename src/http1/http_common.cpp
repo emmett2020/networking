@@ -14,6 +14,6 @@
  * limitations under the License.
  */
 
-#include "http/http1_message_parser.h"
+#include "http1/http_common.h"
 
-namespace net::http {}  // namespace net::http
+namespace net::http1 {}  // namespace net::http1
