@@ -1168,6 +1168,20 @@ TEST_CASE("parse http request body") {
     CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == buffer.size());
     CHECK(ec == std::errc{});
     CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(req.content_length == 11);
     CHECK(req.body == "Hello World");
+  }
+
+  SECTION("Content-Length value less than body size") {
+    string buffer =
+        "GET /index.html HTTP/1.1\r\n"
+        "Content-Length: 1\r\n"
+        "\r\n"
+        "Hello World";
+    CHECK(parser.Parse({buffer.data(), buffer.size()}, ec) == 48);
+    CHECK(ec == std::errc{});
+    CHECK(parser.state_ == Http1MessageParser::State::kCompleted);
+    CHECK(req.content_length == 1);
+    CHECK(req.body == "H");
   }
 }
