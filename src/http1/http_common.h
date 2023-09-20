@@ -15,6 +15,9 @@
  */
 #pragma once
 
+#define MAGIC_ENUM_RANGE_MIN 0
+#define MAGIC_ENUM_RANGE_MAX 1000
+
 #include <array>
 #include <charconv>
 #include <cstring>
@@ -177,8 +180,7 @@ enum class HttpStatusCode {
   kScriptServerError = 544,
 };
 
-constexpr std::string_view HttpStatusCodeToString(
-    HttpStatusCode code) noexcept {
+constexpr std::string_view HttpStatusReason(HttpStatusCode code) noexcept {
   switch (code) {
     case HttpStatusCode::kUnknown:
       return "Unknown Status";

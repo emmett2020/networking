@@ -31,11 +31,15 @@
 #include <utility>
 
 #include "http1/http_common.h"
+#include "http1/http_concept.h"
 #include "http1/http_error.h"
 #include "http1/http_request.h"
 #include "http1/http_response.h"
 
 // TODO(xiaoming): Refactor all documents. Remove the text we copied.
+// TODO(xiaoming): Still need to implement and optimize this parser. Write more
+// test case to make this parser robust. This is a long time work, we need to
+// implement others first.
 
 namespace net::http1 {
 namespace detail {
@@ -301,38 +305,6 @@ using std::error_code;
  * @see whatwg URL specification: https://url.spec.whatwg.org/#urls
  */
 
-template <typename T>
-concept http_response = requires(T& t) {
-  { t.body } -> std::same_as<std::string>;
-  { t.content_length } -> std::same_as<std::size_t>;
-  { t.headers } -> std::same_as<std::unordered_map<std::string, std::string>>;
-  { t.version } -> std::same_as<HttpVersion>;
-  { t.status_code } -> std::same_as<HttpStatusCode>;
-  { t.reason } -> std::same_as<std::string>;
-};
-
-template <typename T>
-concept http_request = requires(T& t) {
-  { t.method } -> std::convertible_to<HttpMethod>;
-  { t.scheme } -> std::convertible_to<HttpScheme>;
-  { t.version } -> std::convertible_to<HttpVersion>;
-  { t.port } -> std::convertible_to<uint16_t>;
-  { t.host } -> std::convertible_to<std::string>;
-  { t.path } -> std::convertible_to<std::string>;
-  { t.uri } -> std::convertible_to<std::string>;
-  { t.body } -> std::convertible_to<std::string>;
-  { t.content_length } -> std::convertible_to<std::size_t>;
-  {
-    t.headers
-  } -> std::convertible_to<std::unordered_map<std::string, std::string>>;
-  {
-    t.params
-  } -> std::convertible_to<std::unordered_map<std::string, std::string>>;
-};
-
-template <typename T>
-concept http_message = http_response<T> || http_request<T>;
-
 template <http_message Message>
 class MessageParser {
  public:
@@ -444,6 +416,16 @@ class MessageParser {
 
   enum class ParamState { kName, kValue, kCompleted };
 
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9112:
+   *               request-line   = method SP request-target SP HTTP-version
+   *   A request-line begins with a method token, followed by a single space
+   * (SP), the request-target, and another single space (SP), and ends with the
+   * protocol version.
+   * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-line
+   */
   void ParseRequestLine(Argument& arg, error_code& ec) {
     while (!ec) {
       switch (request_line_state_) {
@@ -464,7 +446,7 @@ class MessageParser {
           break;
         }
         case RequestLineState::kVersion: {
-          ParseVersion(arg, ec);
+          ParseRequestHttpVersion(arg, ec);
           return;
         }
       }
@@ -981,7 +963,7 @@ class MessageParser {
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-protocol-version
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-http-version
    */
-  void ParseVersion(Argument& arg, error_code& ec) {
+  void ParseRequestHttpVersion(Argument& arg, error_code& ec) {
     static_assert(http_request<Message>);
     const char* version_beg = arg.buffer_beg + arg.parsed_len;
     if (arg.buffer_end - version_beg < 10) {
@@ -1008,7 +990,129 @@ class MessageParser {
     message_state_ = MessageState::kExpectingNewline;
   }
 
-  void ParseStatusLine(Argument& arg, error_code& ec) {}
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9112:
+   *                   status-line = version SP status-code SP reason-phrase
+   * Parse http status line. The first line of a response message is
+   * the status-line, consisting of the protocol version, a space (SP), the
+   * status code, and another space and ending with an OPTIONAL textual phrase
+   * describing the status code.
+   * @see https://datatracker.ietf.org/doc/html/rfc9112#name-status-line
+   */
+  void ParseStatusLine(Argument& arg, error_code& ec) {
+    while (!ec) {
+      switch (status_line_state_) {
+        case StatusLineState::kVersion: {
+          ParseRsponseHttpVersion(arg, ec);
+          break;
+        }
+        case StatusLineState::kStatusCode: {
+          ParseStatusCode(arg, ec);
+          break;
+        }
+        case StatusLineState::kReason: {
+          ParseReason(arg, ec);
+          return;
+        }
+      }
+    }
+  }
+
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details Like @ref ParseRequestHttpVersion, but doesn't need CRLF. Instead,
+   * this function needs SP to indicate version is received completed.
+   */
+  void ParseRsponseHttpVersion(Argument& arg, error_code& ec) {
+    static_assert(http_response<Message>);
+    const char* version_beg = arg.buffer_beg + arg.parsed_len;
+    // HTTP-name + SP
+    if (arg.buffer_end - version_beg < 9) {
+      ec = Error::kNeedMore;
+      return;
+    }
+    if (version_beg[0] != 'H' ||              //
+        version_beg[1] != 'T' ||              //
+        version_beg[2] != 'T' ||              //
+        version_beg[3] != 'P' ||              //
+        version_beg[4] != '/' ||              //
+        std::isdigit(version_beg[5]) == 0 ||  //
+        version_beg[6] != '.' ||              //
+        std::isdigit(version_beg[7]) == 0 ||  //
+        version_beg[8] != ' ') {
+      ec = Error::kBadVersion;
+      return;
+    }
+
+    message_->version =
+        ToHttpVersion(version_beg[5] - '0', version_beg[7] - '0');
+    arg.parsed_len += 9;
+    status_line_state_ = StatusLineState::kStatusCode;
+  }
+
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9112:
+   *                   status-code = 3DIGIT
+   * The status-code element is a 3-digit integer code describing the result of
+   * the server's attempt to understand and satisfy the client's corresponding
+   * request.
+   */
+  void ParseStatusCode(Argument& arg, error_code& ec) {
+    static_assert(http_response<Message>);
+    const char* status_code_beg = arg.buffer_beg + arg.parsed_len;
+    // 3DIGIT + SP
+    if (arg.buffer_end - status_code_beg < 3 + 1) {
+      ec = Error::kNeedMore;
+      return;
+    }
+    if (status_code_beg[3] != ' ') {
+      ec = Error::kBadStatus;
+      return;
+    }
+    message_->status_code = ToHttpStatusCode({status_code_beg, 3});
+    if (message_->status_code == HttpStatusCode::kUnknown) {
+      ec = Error::kBadStatus;
+      return;
+    }
+    arg.parsed_len += 4;
+    status_line_state_ = StatusLineState::kReason;
+  }
+
+  /*
+   * @param arg Records information about the currently parsed buffer.
+   * @param ec The error code which holds detailed failure reason.
+   * @details According to RFC 9112:
+   *               reason-phrase  = 1*( HTAB / SP / VCHAR)
+   *
+   *   The reason-phrase element exists for the sole purpose of providing a
+   * textual description associated with the numeric status code, mostly out of
+   * deference to earlier Internet application protocols that were more
+   * frequently used with interactive text clients.
+   */
+  void ParseReason(Argument& arg, error_code& ec) {
+    static_assert(http_response<Message>);
+    const char* reason_beg = arg.buffer_beg + arg.parsed_len;
+    for (const char* p = reason_beg; p < arg.buffer_end; ++p) {
+      if (*p != '\r') {
+        continue;
+      }
+      if (*(p + 1) != '\n') {
+        ec = Error::kBadLineEnding;
+        return;
+      }
+      message_->reason = {reason_beg, p};
+      // Skip the "\r\n"
+      arg.parsed_len += p - reason_beg + 2;
+      message_state_ = MessageState::kExpectingNewline;
+      return;
+    }
+    ec = Error::kNeedMore;
+  }
 
   /*
    * @param arg Records information about the currently parsed buffer.
@@ -1290,6 +1394,7 @@ class MessageParser {
   // States.
   MessageState message_state_{MessageState::kStartLine};
   RequestLineState request_line_state_{RequestLineState::kMethod};
+  StatusLineState status_line_state_{StatusLineState::kVersion};
   UriState uri_state_{UriState::kInitial};
   ParamState param_state_{ParamState::kName};
   HeaderState header_state_{HeaderState::kName};
