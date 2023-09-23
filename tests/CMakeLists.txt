@@ -12,3 +12,7 @@ set (LIBS Catch2::Catch2WithMain fmt::fmt magic_enum)
 add_executable(test_http1_message_parser test_http1_message_parser.cpp)
 target_link_libraries(test_http1_message_parser PRIVATE ${LIBS})
 
+add_executable(test_http_server test_http_server.cpp)
+target_link_libraries(test_http_server PRIVATE ${LIBS} STDEXEC::stdexec sio::sio)
+
+

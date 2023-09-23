@@ -1,9 +1,6 @@
 [submodule "thirdparties/senders-io"]
 	path = thirdparties/senders-io
 	url = git@github.com:maikel/senders-io.git
-[submodule "thirdparties/stdexec"]
-	path = thirdparties/stdexec
-	url = git@github.com:maikel/stdexec.git
 [submodule "thirdparties/fmt"]
 	path = thirdparties/fmt
 	url = git@github.com:fmtlib/fmt.git
@@ -19,3 +16,7 @@
 [submodule "thirdparties/catch2"]
 	path = thirdparties/catch2
 	url = git@github.com:catchorg/Catch2.git
+[submodule "thirdparties/stdexec"]
+	path = thirdparties/stdexec
+	url = git@github.com:villevoutilainen/wg21_p2300_std_execution.git
+	branch = member-only-customization-points

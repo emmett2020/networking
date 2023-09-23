@@ -16,9 +16,15 @@ set(EXAMPLES_PATH       ${CMAKE_CURRENT_SOURCE_DIR}/examples)
 # Include necessary directoires.
 include_directories(${SOURCE_PATH}/)
 
+# WARN: make sure you have commented the catch2 in stdexec
+# since this is conflict with networing now.
+set(BUILD_TESTING OFF)
+set(STDEXEC_BUILD_EXAMPLES OFF)
 add_subdirectory(${THIRDPARTIES_PATH}/stdexec)
+
 # TODO: rework senders-io's cmakelist.txt
 set(stdexec_DIR ${CMAKE_SOURCE_DIR}/build/thirdparties/stdexec/)
+
 add_subdirectory(${THIRDPARTIES_PATH}/senders-io)
 add_subdirectory(${THIRDPARTIES_PATH}/fmt)
 add_subdirectory(${THIRDPARTIES_PATH}/nlohmann-json)

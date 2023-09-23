@@ -15,7 +15,17 @@
  */
 #include <fmt/format.h>
 #include <iostream>
+
+/* #include <exec/variant_sender.hpp> */
+
 #include <stdexec/execution.hpp>
+#include "sio/io_uring/socket_handle.hpp"
+
+#include "sio/ip/endpoint.hpp"
+#include "sio/ip/tcp.hpp"
+#include "sio/sequence/ignore_all.hpp"
+#include "sio/sequence/let_value_each.hpp"
+
 using namespace std;  // NOLINT
 
 // namespace net {}
