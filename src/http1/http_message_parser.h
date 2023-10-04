@@ -328,6 +328,7 @@ class MessageParser {
 
   [[nodiscard]] Message* AssociatedMessage() const noexcept { return message_; }
 
+  // TODO(xiaoming): we need span<byte>
   std::size_t Parse(std::span<char> buffer, error_code& ec) {
     assert(!ec &&
            "net::http1::MessageParser::parse() failed. The parameter ec should "
@@ -1415,4 +1416,8 @@ class MessageParser {
   // parsing.
   Message* message_{nullptr};
 };
+
+using RequestParser = MessageParser<http1::Request>;
+using ResponseParser = MessageParser<http1::Response>;
+
 }  // namespace net::http1

@@ -1,4 +1,5 @@
-/* Copyright 2023 Xiaoming Zhang
+/*
+ * Copyright (c) 2023 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -12,26 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <catch2/catch_test_macros.hpp>
+
+#pragma once
+
+#include <array>
+#include <cstddef>
 #include <span>
-#include <system_error>
-#include "http1/http_common.h"
-#include "http1/http_error.h"
-#include "http1/http_message_parser.h"
-#include "http1/http_request.h"
-#include "http1/http_response.h"
 
-#include "sio/ip/address.hpp"
-#include "sio/ip/endpoint.hpp"
-#include "tcp/tcp_connection.h"
+template <class T, std::size_t Capacity>
+class CircularArray {
 
-using namespace net::http1;  // NOLINT
-using namespace std;         // NOLINT
+  template <std::size_t CommitSize>
+  std::size_t Commit(std::span<T, CommitSize> s);
 
-TEST_CASE("tcp server") {
-  CHECK(true);
+  bool Consume(std::size_t consume_size) noexcept {
+    if (tail_ + consume_size > head_) {
+      return false;
+    }
+    tail_ += consume_size;
+    return true;
+  }
 
-  sio::ip::endpoint ep{sio::ip::address_v4::any(), 1080};
-  net::tcp::Server server{ep};
-  server.Run();
-}
+  [[nodiscard]] std::size_t Size() const noexcept { return head_ - tail_; }
+
+ private:
+  std::size_t head_{0};
+  std::size_t tail_{0};
+  std::array<T, Capacity> array_{0};
+};

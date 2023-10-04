@@ -20,6 +20,8 @@ include_directories(${SOURCE_PATH}/)
 # since this is conflict with networing now.
 set(BUILD_TESTING OFF)
 set(STDEXEC_BUILD_EXAMPLES OFF)
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 add_subdirectory(${THIRDPARTIES_PATH}/stdexec)
 
 # TODO: rework senders-io's cmakelist.txt
