@@ -17,6 +17,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -24,24 +25,25 @@
 #include <exec/linux/io_uring_context.hpp>
 #include <exec/repeat_effect_until.hpp>
 #include <exec/when_any.hpp>
-
 #include <sio/io_uring/socket_handle.hpp>
 #include <sio/ip/endpoint.hpp>
 #include <sio/ip/tcp.hpp>
 #include <sio/sequence/ignore_all.hpp>
 #include <sio/sequence/let_value_each.hpp>
+#include <sio/io_concepts.hpp>
+#include <sio/ip/address.hpp>
+#include <stdexec/execution.hpp>
 
 #include "http1/http_common.h"
 #include "http1/http_error.h"
 #include "http1/http_message_parser.h"
 #include "http1/http_request.h"
 #include "http1/http_response.h"
-#include "sio/io_concepts.hpp"
-#include "sio/ip/address.hpp"
-#include "stdexec/execution.hpp"
+#include "utils/if_then_else.h"
 
 namespace net::tcp {
 
+  using namespace std::chrono_literals;
   using TcpSocketHandle = sio::io_uring::socket_handle<sio::ip::tcp>;
   using TcpAcceptorHandle = sio::io_uring::acceptor_handle<sio::ip::tcp>;
   using TcpAcceptor = sio::io_uring::acceptor<sio::ip::tcp>;
@@ -83,15 +85,6 @@ namespace net::tcp {
     http1::Response response_{};
   };
 
-  template <class ThenSender, class ElseSender>
-  exec::variant_sender<ThenSender, ElseSender>
-    if_then_else(bool condition, ThenSender then, ElseSender otherwise) {
-    if (condition) {
-      return then;
-    }
-    return otherwise;
-  }
-
   // WARN: useless
   inline auto CopyArray(std::span<std::byte> buffer) noexcept -> std::string {
     std::string ss;
@@ -101,63 +94,30 @@ namespace net::tcp {
     return ss;
   }
 
-  struct RecvMeta {
+  // for client receive server's response
+  struct SocketRecvConfig {
+    uint32_t recv_once_max_wait_time_ms{5000};
+    uint32_t recv_all_max_wait_time_ms{1000 * 60};
+  };
+
+  // for server send response to client
+  struct SocketSendConfig {
+    uint32_t send_once_max_wait_time_ms{5000};
+    uint32_t send_all_max_wait_time_ms{1000 * 60};
+  };
+
+  struct DomainConfig {
+    SocketRecvConfig socket_recv_config;
+    SocketSendConfig socket_send_config;
+  };
+
+  struct SocketRecvMeta {
     TcpSocketHandle socket;
     std::array<std::byte, 8192> recv_buffer{};
     std::size_t unparsed_size{0};
     http1::Request request{};
     http1::RequestParser parser{&request};
   };
-
-  // just(Request) or error
-  inline stdexec::sender auto CreateRequest(TcpSocketHandle socket) noexcept {
-
-    auto read_then_parse = [](RecvMeta& recv_meta) noexcept -> stdexec::sender auto {
-      // TODO:use subspan
-      auto* beg = recv_meta.recv_buffer.begin() + recv_meta.unparsed_size;
-      std::size_t buffer_left_size = recv_meta.recv_buffer.size() - recv_meta.unparsed_size;
-      return sio::async::read_some(recv_meta.socket, std::span{beg, buffer_left_size})
-           | stdexec::let_value([&recv_meta](std::size_t read_size) {
-               if (read_size == 0) {
-                 return stdexec::just(std::error_code(http1::Error::kEndOfStream));
-               }
-               std::size_t need_parsed_size = recv_meta.unparsed_size + read_size;
-               std::string ss = CopyArray(
-                 {recv_meta.recv_buffer.begin(), need_parsed_size}); // DEBUG
-               std::cout << ss;                                      // DEBUG
-               std::error_code ec{};                                 // DEBUG
-               std::size_t parsed_size = recv_meta.parser.Parse(ss, ec);
-
-               if (ec == http1::Error::kNeedMore) {
-                 if (parsed_size < need_parsed_size) {
-                   // Move unparsed data to the front of buffer.
-                   // WARN: this isn't efficient, a new way is needed.
-                   std::size_t unparsed_size = need_parsed_size - parsed_size;
-                   ::memcpy(
-                     recv_meta.recv_buffer.begin(),
-                     recv_meta.recv_buffer.begin() + parsed_size,
-                     unparsed_size);
-                   recv_meta.unparsed_size = unparsed_size;
-                 }
-               }
-               return stdexec::just(ec);
-             });
-    };
-
-    return stdexec::just(RecvMeta{.socket = socket}) //
-         | stdexec::let_value([=](RecvMeta& recv_meta) {
-             return read_then_parse(recv_meta) //
-                  | stdexec::let_value([](std::error_code& ec) {
-                      return if_then_else(
-                        ec == http1::Error::kNeedMore,
-                        stdexec::just(false),
-                        if_then_else(
-                          ec == std::errc{}, stdexec::just(true), stdexec::just_error(ec)));
-                    })
-                  | exec::repeat_effect_until()
-                  | stdexec::let_value([&recv_meta]() { return stdexec::just(recv_meta.request); });
-           });
-  }
 
   // NOTE: some principle
   // 1. all temporary things use just to hold
@@ -185,7 +145,7 @@ namespace net::tcp {
     return response;
   }
 
-  struct SendMeta {
+  struct SocketSendMeta {
     TcpSocketHandle socket;
     std::string send_buffer;
     http1::Response response;
@@ -193,22 +153,22 @@ namespace net::tcp {
 
   inline auto SendResponseHeaders(TcpSocketHandle socket, http1::Response& response) noexcept
     -> auto {
-    return stdexec::just(SendMeta{.socket = socket, .response = response}) //
-         | stdexec::then([](SendMeta&& meta) {
+    return stdexec::just(SocketSendMeta{.socket = socket, .response = response}) //
+         | stdexec::then([](SocketSendMeta&& meta) {
              // Fill response response line and headers to send buffer
              std::string headers = "HTTP/1.1 200 OK\r\nContent-Length:11\r\n\r\n"; // DEBUG
              meta.send_buffer.resize(headers.size());
              ::memcpy(meta.send_buffer.data(), headers.data(), headers.size());
              return meta;
            })
-         | stdexec::let_value([](SendMeta& meta) {
+         | stdexec::let_value([](SocketSendMeta& meta) {
              return sio::async::write(meta.socket, std::as_bytes(std::span(meta.send_buffer)));
            });
   }
 
   inline auto SendResponseBody(TcpSocketHandle socket, http1::Response& response) noexcept {
-    return stdexec::just(SendMeta{.socket = socket, .response = response}) //
-         | stdexec::let_value([](SendMeta& meta) {
+    return stdexec::just(SocketSendMeta{.socket = socket, .response = response}) //
+         | stdexec::let_value([](SocketSendMeta& meta) {
              return sio::async::write(meta.socket, std::as_bytes(std::span(meta.response.Body())));
            });
   }
@@ -229,35 +189,18 @@ namespace net::tcp {
       , acceptor_{&context_, sio::ip::tcp::v4(), endpoint} {
     }
 
-    void Run() noexcept {
-      auto accept_connections = sio::async::use_resources(
-        [&](TcpAcceptorHandle acceptor_handle) noexcept {
-          return sio::async::accept(acceptor_handle)
-               | sio::let_value_each([&](TcpSocketHandle socket) {
-                   return CreateRequest(socket) //
-                        | stdexec::then(Handle) //
-                        | stdexec::let_value([socket](http1::Response& response) {
-                            return SendResponseHeaders(socket, response)
-                                 | stdexec::then([](std::size_t nbytes) {
-                                     std::cout << "send bytes: " << nbytes << std::endl;
-                                   });
-                          }) //
-                        | stdexec::upon_error([](auto&& ec) {});
-                 })
-               | sio::ignore_all();
-        },
-        acceptor_);
+    // just(Request) or error
+    inline stdexec::sender auto CreateRequest(TcpSocketHandle socket) noexcept;
+    void Run() noexcept;
 
-      stdexec::sync_wait(exec::when_any(accept_connections, context_.run()));
-    }
-
-    void CreateResponse();
 
    private:
     exec::io_uring_context context_{};
     sio::ip::endpoint endpoint_{};
     TcpAcceptor acceptor_;
     std::unordered_map<SessionId, Session> sessions_;
+    std::unordered_map<std::string, DomainConfig> domain_configs_;
+    SocketRecvConfig server_recv_config_{};
   };
 
 } // namespace net::tcp

@@ -16,59 +16,63 @@
 
 #pragma once
 #include <string>
-#include <system_error>  // NOLINT
+#include <system_error> // NOLINT
 
 namespace net::http1 {
-// Error codes returned from HTTP algorithms and operations.
-enum class Error {
-  kSuccess = 0,
-  kEndOfStream,
-  kPartialMessage,
-  kNeedMore,
-  kUnexpectedBody,
-  kNeedBuffer,
-  kEndOfChunk,
-  kBufferOverflow,
-  kHeaderLimit,
-  kBodyLimit,
-  kBadAlloc,
-  kBadLineEnding,
-  kEmptyMethod,
-  kBadMethod,
-  kBadUri,
-  kBadScheme,
-  kBadHost,
-  kBadPort,
-  kBadPath,
-  kBadParams,
-  kBadVersion,
-  kBadStatus,
-  kBadReason,
-  kBadHeader,
-  kBadHeaderName,
-  kEmptyHeaderName,
-  kEmptyHeaderValue,
-  kBadHeaderValue,
-  kBadContentLength,
-  kBadTransferEncoding,
-  kBadChunk,
-  kBadChunkExtension,
-  kBadObsFold,
-  kMultipleContentLength,
-  kStaleParser,
-  kShortRead,
-};
+  // Error codes returned from HTTP algorithms and operations.
+  enum class Error {
+    kSuccess = 0,
+    kEndOfStream,
+    kPartialMessage,
+    kNeedMore,
+    kUnexpectedBody,
+    kNeedBuffer,
+    kEndOfChunk,
+    kBufferOverflow,
+    kHeaderLimit,
+    kBodyLimit,
+    kBadAlloc,
+    kBadLineEnding,
+    kEmptyMethod,
+    kBadMethod,
+    kBadUri,
+    kBadScheme,
+    kBadHost,
+    kBadPort,
+    kBadPath,
+    kBadParams,
+    kBadVersion,
+    kBadStatus,
+    kBadReason,
+    kBadHeader,
+    kBadHeaderName,
+    kEmptyHeaderName,
+    kEmptyHeaderValue,
+    kBadHeaderValue,
+    kBadContentLength,
+    kBadTransferEncoding,
+    kBadChunk,
+    kBadChunkExtension,
+    kBadObsFold,
+    kMultipleContentLength,
+    kStaleParser,
+    kShortRead,
+    kRecvTimeoutWithReceivingNothing,
+    kRecvRequestLineTimeout,
+    kRecvRequestHeadersTimeout,
+    kRecvRequestBodyTimeout,
+  };
 
-class HttpErrorCategory : public std::error_category {
- public:
-  [[nodiscard]] const char* name() const noexcept override {
-    return "net.http";
-  }
+  class HttpErrorCategory : public std::error_category {
+   public:
+    [[nodiscard]] const char* name() const noexcept override {
+      return "net.http";
+    }
 
-  HttpErrorCategory() = default;
+    HttpErrorCategory() = default;
 
-  [[nodiscard]] std::string message(int err) const override {
-    switch (static_cast<Error>(err)) {
+    [[nodiscard]] std::string message(int err) const override {
+      switch (static_cast<Error>(err)) {
       case Error::kEndOfStream:
         return "end of stream";
       case Error::kPartialMessage:
@@ -139,39 +143,44 @@ class HttpErrorCategory : public std::error_category {
         return "stale parser";
       case Error::kShortRead:
         return "unexpected eof in body";
+      case Error::kRecvTimeoutWithReceivingNothing:
+        return "receive timeout with receiving nothing";
+      case Error::kRecvRequestLineTimeout:
+        return "receive request line timeout";
+      case Error::kRecvRequestHeadersTimeout:
+        return "receive request headers timeout";
+      case Error::kRecvRequestBodyTimeout:
+        return "receive request body timeout";
 
       default:
         return "beast.http Error";
+      }
     }
+
+    [[nodiscard]] std::error_condition default_error_condition(int err) const noexcept override {
+      return std::error_condition{err, *this};
+    }
+
+    [[nodiscard]] bool
+      equivalent(int err, std::error_condition const & condition) const noexcept override {
+      return condition.value() == err && &condition.category() == this;
+    }
+
+    [[nodiscard]] bool equivalent(const std::error_code& error, int err) const noexcept override {
+      return error.value() == err && &error.category() == this;
+    }
+  };
+
+  inline std::error_code make_error_code(net::http1::Error err) { // NOLINT
+    static net::http1::HttpErrorCategory category{};
+    return {static_cast<std::underlying_type<net::http1::Error>::type>(err), category};
   }
 
-  [[nodiscard]] std::error_condition default_error_condition(
-      int err) const noexcept override {
-    return std::error_condition{err, *this};
-  }
-
-  [[nodiscard]] bool equivalent(
-      int err, std::error_condition const& condition) const noexcept override {
-    return condition.value() == err && &condition.category() == this;
-  }
-
-  [[nodiscard]] bool equivalent(const std::error_code& error,
-                                int err) const noexcept override {
-    return error.value() == err && &error.category() == this;
-  }
-};
-
-inline std::error_code make_error_code(net::http1::Error err) {  // NOLINT
-  static net::http1::HttpErrorCategory category{};
-  return {static_cast<std::underlying_type<net::http1::Error>::type>(err),
-          category};
-}
-
-}  // namespace net::http1
+} // namespace net::http1
 
 namespace std {
-template <>
-struct is_error_code_enum<net::http1::Error> {
-  static bool const value = true;  // NOLINT
-};
-}  // namespace std
+  template <>
+  struct is_error_code_enum<net::http1::Error> {
+    static bool const value = true; // NOLINT
+  };
+} // namespace std

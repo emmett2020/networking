@@ -4,6 +4,7 @@ Checks: '
   -fuchsia*,
   -altera*,
   -hicpp*,
+  
 
   -modernize-use-trailing-return-type,
 
