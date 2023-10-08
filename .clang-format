@@ -1,6 +1,6 @@
 # https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 Language: Cpp
-BasedOnStyle: WebKit
+BasedOnStyle: Google
 AccessModifierOffset: -1
 AlignAfterOpenBracket: AlwaysBreak
 AlignArrayOfStructures: Right

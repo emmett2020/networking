@@ -41,6 +41,7 @@
 #include "http1/http_request.h"
 #include "http1/http_response.h"
 #include "utils/if_then_else.h"
+#include "utils/stdexec_util.h"
 
 namespace net::tcp {
 
@@ -95,6 +96,9 @@ namespace net::tcp {
     return ss;
   }
 
+  using ConstBuffer = std::span<const std::byte>;
+  using MutableBuffer = std::span< std::byte>;
+
   // for client receive server's response
   struct SocketRecvConfig {
     uint32_t recv_once_max_wait_time_ms{5000};
@@ -103,13 +107,19 @@ namespace net::tcp {
 
   // for server send response to client
   struct SocketSendConfig {
-    uint32_t send_once_max_wait_time_ms{5000};
+    uint32_t send_response_line_and_headers_max_wait_time_ms{5000};
+    uint32_t send_body_max_wait_time_ms{5000};
     uint32_t send_all_max_wait_time_ms{1000 * 60};
   };
 
   struct DomainConfig {
     SocketRecvConfig socket_recv_config;
     SocketSendConfig socket_send_config;
+  };
+
+  struct IoResult {
+    std::error_code ec{};
+    std::size_t bytes_size{0};
   };
 
   struct SocketRecvMeta {
@@ -119,6 +129,7 @@ namespace net::tcp {
     http1::Request request{};
     http1::RequestParser parser{&request};
     std::error_code ec{};
+    std::uint32_t reuse_cnt{0};
   };
 
   // NOTE: some principle
@@ -149,10 +160,16 @@ namespace net::tcp {
 
   struct SocketSendMeta {
     TcpSocketHandle socket;
-    std::string send_buffer;
+    std::string start_line_and_headers;
     http1::Response response;
     std::error_code ec{};
     std::uint32_t total_send_size{0};
+    uint32_t send_once_max_wait_time_ms;
+  };
+
+  struct HostSocketEnv {
+    std::uint32_t reuse_cnt = 0;
+    bool need_keep_alive = false;
   };
 
   // TODO(xiaoming): how to make ipv6?
@@ -174,20 +191,20 @@ namespace net::tcp {
     void Run() noexcept;
 
     // just(Request) or just_error(error_code)
-    stdexec::sender auto CreateRequest(TcpSocketHandle socket) noexcept;
+    ex::sender auto CreateRequest(TcpSocketHandle socket, uint32_t reuse_cnt) noexcept;
 
-    stdexec::sender auto SendResponse(SocketSendMeta meta) noexcept;
+    ex::sender auto SendResponse(SocketSendMeta meta) noexcept;
 
-    auto SendResponseHeaders(TcpSocketHandle socket, http1::Response& response) noexcept;
+    ex::sender auto SendResponseLineAndHeaders(TcpSocketHandle socket, ConstBuffer buffer);
 
-    auto SendResponseBody(TcpSocketHandle socket, http1::Response& response) noexcept;
+    ex::sender auto SendResponseBody(TcpSocketHandle socket, ConstBuffer buffer);
 
-    stdexec::sender auto WaitToAlarm(uint32_t milliseconds) noexcept {
+    ex::sender auto WaitToAlarm(uint32_t milliseconds) noexcept {
       return exec::schedule_after(
         context_.get_scheduler(), std::chrono::milliseconds(milliseconds));
     }
 
-    stdexec::sender auto ReadOnce(SocketRecvMeta& meta, uint32_t time_ms) noexcept;
+    ex::sender auto ReadOnce(SocketRecvMeta& meta, uint32_t time_ms) noexcept;
 
 
    private:

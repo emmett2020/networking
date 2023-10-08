@@ -16,10 +16,13 @@
 
 #include "tcp_connection.h"
 #include "exec/timed_scheduler.hpp"
+#include "exec/variant_sender.hpp"
 #include "exec/when_any.hpp"
+#include "http1/http_common.h"
 #include "http1/http_error.h"
 #include "http1/http_message_parser.h"
 #include "http1/http_request.h"
+#include "http1/http_response.h"
 #include "sio/io_concepts.hpp"
 #include "stdexec/__detail/__p2300.hpp"
 #include "stdexec/execution.hpp"
@@ -27,6 +30,7 @@
 #include <chrono>
 #include <cstdint>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <unistd.h>
 
 namespace net::tcp {
@@ -38,7 +42,7 @@ namespace net::tcp {
   std::error_code GetErrorCodeByRequestParseState(http1::RequestParser& parser) noexcept {
     auto state = parser.State();
     if (state == http1::RequestParser::MessageState::kNothingYet) {
-      return http1::Error::kRecvTimeoutWithReceivingNothing;
+      return http1::Error::kRecvRequestTimeoutWithNothing;
     }
 
     if (state == http1::RequestParser::MessageState::kStartLine) {
@@ -51,49 +55,43 @@ namespace net::tcp {
     return http1::Error::kRecvRequestHeadersTimeout;
   }
 
-  stdexec::sender auto Server::ReadOnce(SocketRecvMeta& meta, uint32_t time_ms) noexcept {
+  ex::sender auto Server::ReadOnce(SocketRecvMeta& meta, uint32_t time_ms) noexcept {
+    ex::sender auto read_once = sio::async::read_some(meta.socket, meta.recv_buffer) //
+                              | ex::upon_stopped([&meta]() -> std::size_t {
+                                  meta.ec = {};
+                                  return 0;
+                                });
 
-    stdexec::sender auto read_once =
-      sio::async::read_some(meta.socket, meta.recv_buffer) //
-      | stdexec::upon_stopped([&meta]() -> std::size_t {
-          // error_code Error::KeepAlive
-          meta.ec = {};
-          return 0;
-        });
-
-    stdexec::sender auto alarm = WaitToAlarm(time_ms) | then([] -> std::size_t { return 0; });
+    ex::sender auto alarm = WaitToAlarm(time_ms) | then([] -> std::size_t { return 0; });
 
     // when_any should be encap to timed_sender
     return exec::when_any(read_once, alarm) //
          | then([&meta](std::size_t read_size) { meta.unparsed_size = read_size; })
          | let_value([&meta]() {
              return if_then_else(
-               meta.ec == std::errc{},
-               stdexec::just(meta.unparsed_size),
-               stdexec::just_error(meta.ec));
+               meta.ec == std::errc{}, ex::just(meta.unparsed_size), ex::just_error(meta.ec));
            });
   }
 
   // just(Request) or just_error(error_code)
-  stdexec::sender auto Server::CreateRequest(TcpSocketHandle socket) noexcept {
+  ex::sender auto Server::CreateRequest(TcpSocketHandle socket, uint32_t reuse_cnt) noexcept {
 
-    auto read_then_parse = [this](SocketRecvMeta& meta) noexcept -> stdexec::sender auto {
+    auto read_then_parse = [this, reuse_cnt](SocketRecvMeta& meta) noexcept -> ex::sender auto {
       auto free_buffer = std::span{meta.recv_buffer}.subspan(meta.unparsed_size);
 
-      bool need_keep_alive = true; // DEBUG
       uint32_t first_read_wait_time = 0;
-      if (need_keep_alive) {
+      if (reuse_cnt > 0) { // not first time accept
         first_read_wait_time = keep_alive_time_ms_;
       } else {
         first_read_wait_time = server_recv_config_.recv_once_max_wait_time_ms;
       }
 
-      stdexec::sender auto read_once = ReadOnce(meta, first_read_wait_time);
+      ex::sender auto read_once = ReadOnce(meta, first_read_wait_time);
 
-      // return sio::async::read_some(meta.socket, free_buffer)
-      return read_once | stdexec::let_value([&meta](std::size_t read_size) {
+      return read_once //
+           | ex::let_value([&meta](std::size_t read_size) {
                if (read_size == 0) {
-                 return stdexec::just(std::error_code(http1::Error::kEndOfStream));
+                 return ex::just(std::error_code(http1::Error::kEndOfStream));
                }
                std::size_t need_parsed_size = meta.unparsed_size + read_size;
                std::string ss = CopyArray({meta.recv_buffer.begin(), need_parsed_size}); // DEBUG
@@ -113,105 +111,131 @@ namespace net::tcp {
                    meta.unparsed_size = unparsed_size;
                  }
                }
-               return stdexec::just(ec);
+               return ex::just(ec);
              });
     };
 
-    return stdexec::just(SocketRecvMeta{.socket = socket}) //
-         | stdexec::let_value([=](SocketRecvMeta& recv_meta) {
-             stdexec::sender auto recv_all_xxx =
+    return ex::just(SocketRecvMeta{.socket = socket}) //
+         | ex::let_value([=](SocketRecvMeta& recv_meta) {
+             ex::sender auto recv_all_xxx =
                read_then_parse(recv_meta) //
-               | stdexec::let_value([=, &recv_meta](std::error_code& ec) {
+               | ex::let_value([=, &recv_meta](std::error_code& ec) {
                    //
-                   stdexec::sender auto recv_all =
+                   ex::sender auto recv_all =
                      read_then_parse(recv_meta) //
-                     | stdexec::let_value([](std::error_code& ec) {
+                     | ex::let_value([](std::error_code& ec) {
                          return if_then_else(
                            ec == http1::Error::kNeedMore,
-                           stdexec::just(false),
-                           if_then_else(
-                             ec == std::errc{}, stdexec::just(true), stdexec::just_error(ec)));
+                           ex::just(false),
+                           if_then_else(ec == std::errc{}, ex::just(true), ex::just_error(ec)));
                        }) //
                      | exec::repeat_effect_until();
 
                    return if_then_else(
                      ec && ec != http1::Error::kNeedMore,
-                     stdexec::just_error(ec),
-                     if_then_else(ec == std::errc{}, stdexec::just(), recv_all));
+                     ex::just_error(ec),
+                     if_then_else(ec == std::errc{}, ex::just(), recv_all));
                  });
 
-
-             //
-             // stdexec::sender auto recv_all =
-             //   read_then_parse(recv_meta) //
-             //   | stdexec::let_value([](std::error_code& ec) {
-             //       return if_then_else(
-             //         ec == http1::Error::kNeedMore,
-             //         stdexec::just(false),
-             //         if_then_else(ec == std::errc{}, stdexec::just(true), stdexec::just_error(ec)));
-             //     }) //
-             //   | exec::repeat_effect_until();
-             //
-
-             stdexec::sender auto alarm = exec::schedule_after(
+             ex::sender auto alarm = exec::schedule_after(
                context_.get_scheduler(),
                std::chrono::milliseconds(server_recv_config_.recv_all_max_wait_time_ms));
 
              return exec::when_any(recv_all_xxx, alarm) //
-                  | stdexec::let_value([&recv_meta]() {
+                  | ex::let_value([&recv_meta]() {
                       return if_then_else(
                         recv_meta.parser.State() == http1::RequestParser::MessageState::kCompleted,
-                        stdexec::just(std::move(recv_meta.request)),
-                        stdexec::just_error(GetErrorCodeByRequestParseState(recv_meta.parser)));
+                        ex::just(std::move(recv_meta.request)),
+                        ex::just_error(GetErrorCodeByRequestParseState(recv_meta.parser)));
                     });
            });
   }
 
-  auto Server::SendResponseHeaders(TcpSocketHandle socket, http1::Response& response) noexcept {
-    return stdexec::just(SocketSendMeta{.socket = socket, .response = response}) //
-         | stdexec::then([](SocketSendMeta&& meta) {
-             // Fill response response line and headers to send buffer
-             std::string headers = "HTTP/1.1 200 OK\r\nContent-Length:11\r\n\r\n"; // DEBUG
-             meta.send_buffer.resize(headers.size());
-             ::memcpy(meta.send_buffer.data(), headers.data(), headers.size());
-             return meta;
-           })
-         | stdexec::let_value([](SocketSendMeta& meta) {
-             return sio::async::write(meta.socket, std::as_bytes(std::span(meta.send_buffer)));
-           });
+  ex::sender auto Server::SendResponseLineAndHeaders(TcpSocketHandle socket, ConstBuffer buffer) {
+    auto write = sio::async::write(socket, buffer) //
+               | ex::let_value([](std::size_t send_bytes_size) {
+                   return ex::just(IoResult{.bytes_size = send_bytes_size});
+                 });
+    auto alarm = WaitToAlarm(server_send_config_.send_response_line_and_headers_max_wait_time_ms)
+               | let_value([] {
+                   return ex::just(IoResult{.ec = http1::Error::kSendResponseHeadersTimeout});
+                 });
+    return ex::when_any(write, alarm);
   }
 
-  auto Server::SendResponseBody(TcpSocketHandle socket, http1::Response& response) noexcept {
-    return stdexec::just(SocketSendMeta{.socket = socket, .response = response}) //
-         | stdexec::let_value([](SocketSendMeta& meta) {
-             return sio::async::write(meta.socket, std::as_bytes(std::span(meta.response.Body())));
-           });
+  ex::sender auto Server::SendResponseBody(TcpSocketHandle socket, ConstBuffer buffer) {
+    auto write = sio::async::write(socket, buffer) //
+               | ex::let_value([](std::size_t send_bytes_size) {
+                   return ex::just(IoResult{.bytes_size = send_bytes_size});
+                 });
+    auto alarm = WaitToAlarm(server_send_config_.send_body_max_wait_time_ms) //
+               | let_value([] {                                              //
+                   return ex::just(IoResult{.ec = http1::Error::kSendResponseBodyTimeout});
+                 });
+    return ex::when_any(write, alarm);
   }
 
-  stdexec::sender auto Server::SendResponse(SocketSendMeta meta) noexcept {
-    stdexec::sender auto send_all =
-      SendResponseHeaders(meta.socket, meta.response) //
-      | stdexec::then([this, &meta](std::size_t nbytes) {
-          meta.total_send_size += nbytes;
-          std::cout << "send header bytes: " << nbytes << std::endl;
+  ex::sender auto Server::SendResponse(SocketSendMeta meta) noexcept {
+    auto create_response_line_and_headers = [&meta] {
+      std::optional<std::string> response_str = meta.response.MakeResponseString();
+      if (response_str.has_value()) {
+        meta.start_line_and_headers = std::move(*response_str);
+        meta.ec = {};
+      } else {
+        meta.ec = http1::Error::kInvalidResponse;
+      }
+      return just();
+    };
+
+    auto assert_meta_error_code_is_clear = [&meta] {
+      return ex::let_value([&meta] {
+        return if_then_else(meta.ec == std::errc{}, just(), just_error(meta.ec));
+      });
+    };
+
+    auto fill_error_code_and_send_size_of_meta = [&meta](IoResult io_result) {
+      if (!io_result.ec) {
+        meta.total_send_size += io_result.bytes_size;
+      } else {
+        meta.ec = io_result.ec;
+      }
+      std::cout << "send bytes: " << meta.total_send_size << std::endl;
+    };
+
+    ex::sender auto send_response =
+      create_response_line_and_headers()  //
+      | assert_meta_error_code_is_clear() //
+      | ex::let_value([this, &meta] {
+          return SendResponseLineAndHeaders(
+            meta.socket, std::as_bytes(std::span(meta.start_line_and_headers)));
         })
-      | stdexec::let_value([this, &meta]() {
+      | ex::then(fill_error_code_and_send_size_of_meta) //
+      | assert_meta_error_code_is_clear()               //
+      | ex::let_value([this, &meta] {
           bool need_send_body = true;
           return if_then_else(
-            need_send_body, stdexec::just(0), SendResponseBody(meta.socket, meta.response));
+            need_send_body,
+            SendResponseBody(meta.socket, std::as_bytes(std::span(meta.response.Body()))),
+            ex::just(IoResult{}));
         })
-      | stdexec::then([&meta](std::size_t nbytes) {
-          meta.total_send_size += nbytes;
-          std::cout << "send body bytes: " << nbytes << std::endl;
-        });
+      | ex::then(fill_error_code_and_send_size_of_meta) //
+      | assert_meta_error_code_is_clear();
 
-    return exec::when_any(send_all, WaitToAlarm(server_send_config_.send_all_max_wait_time_ms)) //
-         | stdexec::let_value([&meta]() {
-             return if_then_else(
-               meta.ec == std::errc{},
-               stdexec::just(meta.total_send_size),
-               stdexec::just_error(meta.ec));
-           });
+    ex::sender auto alarm = WaitToAlarm(server_send_config_.send_all_max_wait_time_ms);
+
+    return exec::when_any(send_response, alarm) //
+         | assert_meta_error_code_is_clear();
+  }
+
+  bool NeedKeepAlive(const http1::Request& request) noexcept {
+    if (request.ContainsHeader(http1::kHttpHeaderConnection)) {
+      // TODO(xiaoming): extract value
+      return true;
+    }
+    if (request.Version() == http1::HttpVersion::kHttp11) {
+      return true;
+    }
+    return false;
   }
 
   void Server::Run() noexcept {
@@ -219,24 +243,35 @@ namespace net::tcp {
       [&](TcpAcceptorHandle acceptor_handle) noexcept {
         return sio::async::accept(acceptor_handle)
              | sio::let_value_each([&, this](TcpSocketHandle socket) {
-                 return CreateRequest(socket) //
-                      | stdexec::then(Handle) //
-                      | stdexec::let_value([this, socket](http1::Response& response) {
-                          return SendResponse(
-                            SocketSendMeta{.socket = socket, .response = std::move(response)});
-                        })
-                      | stdexec::then([this](uint32_t) {
-                          bool keep_alive = true;
-                          // record not first time request
-                          return keep_alive;
-                        })
-                      | exec::repeat_effect_until() //
-                      | stdexec::upon_error([]<class E >(E&&) {});
+                 // run_once
+                 return ex::just(HostSocketEnv{}) //
+                      | let_value([this, socket](HostSocketEnv& socket_env) {
+                          return CreateRequest(socket, socket_env.reuse_cnt) //
+                               | ex::then([&socket_env](http1::Request&& request) {
+                                   // lambda?
+                                   socket_env.need_keep_alive = NeedKeepAlive(request);
+                                   return std::move(request);
+                                 })
+                               | ex::then(Handle) //
+                               | ex::let_value([this, socket](http1::Response& response) {
+                                   return SendResponse(SocketSendMeta{
+                                     .socket = socket, .response = std::move(response)});
+                                 })
+                               | ex::then([this, &socket_env] {
+                                   bool keep_alive = true;
+                                   if (keep_alive) {
+                                     ++socket_env.reuse_cnt;
+                                   }
+                                   return keep_alive;
+                                 })
+                               | exec::repeat_effect_until() //
+                               | ex::upon_error([]<class E >(E&&) {});
+                        });
                })
              | sio::ignore_all();
       },
       acceptor_);
 
-    stdexec::sync_wait(exec::when_any(accept_connections, context_.run()));
+    ex::sync_wait(exec::when_any(accept_connections, context_.run()));
   }
 } // namespace net::tcp

@@ -135,6 +135,13 @@ namespace net::http1 {
           return ::strcasecmp(p.first.c_str(), header_name.c_str()) == 0;
         });
     }
+
+    bool ContainsHeader(std::string_view header_name) const noexcept {
+      return std::any_of(
+        headers.cbegin(), headers.cend(), [header_name](const auto& p) noexcept -> bool {
+          return ::strcasecmp(p.first.c_str(), header_name.data()) == 0;
+        });
+    }
   };
 
 } // namespace net::http1

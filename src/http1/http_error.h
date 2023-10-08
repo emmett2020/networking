@@ -57,10 +57,14 @@ namespace net::http1 {
     kMultipleContentLength,
     kStaleParser,
     kShortRead,
-    kRecvTimeoutWithReceivingNothing,
+    kInvalidResponse,
+    kRecvRequestTimeoutWithNothing,
     kRecvRequestLineTimeout,
     kRecvRequestHeadersTimeout,
     kRecvRequestBodyTimeout,
+    kSendResponseTimeoutWithNothing,
+    kSendResponseHeadersTimeout,
+    kSendResponseBodyTimeout
   };
 
   class HttpErrorCategory : public std::error_category {
@@ -143,14 +147,22 @@ namespace net::http1 {
         return "stale parser";
       case Error::kShortRead:
         return "unexpected eof in body";
-      case Error::kRecvTimeoutWithReceivingNothing:
-        return "receive timeout with receiving nothing";
+      case Error::kInvalidResponse:
+        return "invalid response";
+      case Error::kRecvRequestTimeoutWithNothing:
+        return "receive request timeout with nothing";
       case Error::kRecvRequestLineTimeout:
         return "receive request line timeout";
       case Error::kRecvRequestHeadersTimeout:
         return "receive request headers timeout";
       case Error::kRecvRequestBodyTimeout:
         return "receive request body timeout";
+      case Error::kSendResponseTimeoutWithNothing:
+        return "send response timeout with nothing";
+      case Error::kSendResponseHeadersTimeout:
+        return "send response headers timeout";
+      case Error::kSendResponseBodyTimeout:
+        return "send response body timeout";
 
       default:
         return "beast.http Error";

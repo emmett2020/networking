@@ -70,6 +70,34 @@ namespace net::http1 {
           return ::strcasecmp(p.first.c_str(), header_name.c_str()) == 0;
         });
     }
+
+    std::optional<std::string> MakeResponseString() const noexcept {
+      std::string buffer;
+      buffer.reserve(8192);
+      if (version == HttpVersion::kUnknown || status_code == HttpStatusCode::kUnknown) {
+        return std::nullopt;
+      }
+
+      // append response line
+      buffer.append(HttpVersionToString(version));
+      buffer.append(" ");
+      buffer.append(HttpStatusCodeToString(status_code));
+      buffer.append(" ");
+      buffer.append(HttpStatusReason(status_code));
+      buffer.append("\r\n");
+
+      // append headers
+      for (const auto& [name, value]: headers) {
+        buffer.append(name);
+        buffer.append(": ");
+        buffer.append(value);
+        buffer.append("\r\n");
+      }
+
+      buffer.append("\r\n");
+      // not include body
+      return buffer;
+    }
   };
 
 } // namespace net::http1
