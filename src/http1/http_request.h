@@ -29,96 +29,112 @@
 
 namespace net::http1 {
 
-struct Options {
-  uint32_t max_length_of_uri_path = 4096;
-  uint32_t max_length_of_uri_param_name = 1024;
-  uint32_t max_length_of_uri_param_value = 1024;
-  uint32_t max_size_of_uri_params = 1024;
-};
+  struct Options {
+    uint32_t max_length_of_uri_path = 4096;
+    uint32_t max_length_of_uri_param_name = 1024;
+    uint32_t max_length_of_uri_param_value = 1024;
+    uint32_t max_size_of_uri_params = 1024;
+  };
 
-// A request received from a client.
-struct RequestBase {
-  HttpMethod method{HttpMethod::kUnknown};
-  HttpScheme scheme{HttpScheme::kUnknown};
-  HttpVersion version{HttpVersion::kUnknown};
-  uint16_t port = 0;
-  std::string host;
-  std::string path;
-  std::string uri;
-  std::string body;
-  std::size_t content_length{0};
-  std::unordered_map<std::string, std::string> headers;
-  std::unordered_map<std::string, std::string> params;
-};
+  // A request received from a client.
+  struct RequestBase {
+    HttpMethod method{HttpMethod::kUnknown};
+    HttpScheme scheme{HttpScheme::kUnknown};
+    HttpVersion version{HttpVersion::kUnknown};
+    uint16_t port = 0;
+    std::string host;
+    std::string path;
+    std::string uri;
+    std::string body;
+    std::size_t content_length{0};
+    std::unordered_map<std::string, std::string> headers;
+    std::unordered_map<std::string, std::string> params;
 
-struct Request : public RequestBase {
+    uint32_t keep_alive_reuse_count{0};
+  };
 
-  HttpMethod Method() const noexcept { return method; }
+  struct Request : public RequestBase {
 
-  HttpScheme Scheme() const noexcept { return scheme; }
 
-  std::string_view Host() const noexcept { return host; }
+    HttpMethod Method() const noexcept {
+      return method;
+    }
 
-  std::uint16_t Port() const noexcept { return port; }
+    HttpScheme Scheme() const noexcept {
+      return scheme;
+    }
 
-  std::string_view Path() const noexcept { return path; }
+    std::string_view Host() const noexcept {
+      return host;
+    }
 
-  std::string_view Uri() const noexcept { return uri; }
+    std::uint16_t Port() const noexcept {
+      return port;
+    }
 
-  HttpVersion Version() const noexcept { return version; }
+    std::string_view Path() const noexcept {
+      return path;
+    }
 
-  std::string_view Body() const noexcept { return body; }
+    std::string_view Uri() const noexcept {
+      return uri;
+    }
 
-  void SetHeaderContentLength(std::size_t length) noexcept {
-    content_length = length;
-  }
+    HttpVersion Version() const noexcept {
+      return version;
+    }
 
-  std::unordered_map<std::string, std::string> Params() const noexcept {
-    return params;
-  }
+    std::string_view Body() const noexcept {
+      return body;
+    }
 
-  std::unordered_map<std::string, std::string>& Params() noexcept {
-    return params;
-  }
+    void SetHeaderContentLength(std::size_t length) noexcept {
+      content_length = length;
+    }
 
-  std::optional<std::string_view> ParamValue(
-      const std::string& param_key) const noexcept {
-    auto it = params.find(param_key);
-    if (it == params.end()) {
+    std::unordered_map<std::string, std::string> Params() const noexcept {
+      return params;
+    }
+
+    std::unordered_map<std::string, std::string>& Params() noexcept {
+      return params;
+    }
+
+    std::optional<std::string_view> ParamValue(const std::string& param_key) const noexcept {
+      auto it = params.find(param_key);
+      if (it == params.end()) {
+        return std::nullopt;
+      }
+      return it->second;
+    }
+
+    bool ContainsParam(const std::string& param_key) const noexcept {
+      return params.contains(param_key);
+    }
+
+    std::unordered_map<std::string, std::string> Headers() const noexcept {
+      return headers;
+    }
+
+    std::unordered_map<std::string, std::string>& Headers() noexcept {
+      return headers;
+    }
+
+    std::optional<std::string_view> HeaderValue(const std::string& header_name) const noexcept {
+      for (const auto& [name, value]: headers) {
+        if (::strcasecmp(name.c_str(), header_name.c_str()) == 0) {
+          return value;
+        }
+      }
       return std::nullopt;
     }
-    return it->second;
-  }
 
-  bool ContainsParam(const std::string& param_key) const noexcept {
-    return params.contains(param_key);
-  }
-
-  std::unordered_map<std::string, std::string> Headers() const noexcept {
-    return headers;
-  }
-
-  std::unordered_map<std::string, std::string>& Headers() noexcept {
-    return headers;
-  }
-
-  std::optional<std::string_view> HeaderValue(
-      const std::string& header_name) const noexcept {
-    for (const auto& [name, value] : headers) {
-      if (::strcasecmp(name.c_str(), header_name.c_str()) == 0) {
-        return value;
-      }
+    bool ContainsHeader(const std::string& header_name) const noexcept {
+      return std::any_of(
+        headers.cbegin(), headers.cend(), [header_name](const auto& p) noexcept -> bool {
+          return ::strcasecmp(p.first.c_str(), header_name.c_str()) == 0;
+        });
     }
-    return std::nullopt;
-  }
+  };
 
-  bool ContainsHeader(const std::string& header_name) const noexcept {
-    return std::any_of(headers.cbegin(), headers.cend(),
-                       [header_name](const auto& p) noexcept -> bool {
-                         return ::strcasecmp(p.first.c_str(),
-                                             header_name.c_str()) == 0;
-                       });
-  }
-};
-
-}  // namespace net::http1
+} // namespace net::http1

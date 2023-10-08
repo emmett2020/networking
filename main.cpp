@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <any>
 #include <fmt/format.h>
 #include <iostream>
 
@@ -40,66 +41,54 @@ using stdexec::sync_wait;
 using stdexec::then;
 using exec::when_any;
 using stdexec::when_all;
+
+
 using namespace chrono_literals;
 using namespace stdexec; // NOLINT
 using namespace exec;    // NOLINT
 using namespace std;     // NOLINT
 
+struct any_receiver {
+  template <class Sender>
+  auto set_next(exec::set_next_t, Sender&&) noexcept {
+    return stdexec::just();
+  }
+
+  void set_value(stdexec::set_value_t, auto&&...) && noexcept {
+  }
+
+  void set_stopped(stdexec::set_stopped_t) && noexcept {
+  }
+
+  template <class E>
+  void set_error(stdexec::set_error_t, E&&) && noexcept {
+  }
+
+  stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
+    return {};
+  }
+};
+
 int main() {
 
-  exec::io_uring_context ctx;
-  auto sche = ctx.get_scheduler();
+  static_assert(__nothrow_decay_copyable<any_receiver>);
 
-  std::jthread j([&]() { ctx.run_until_empty(); });
-
-  // sender auto s = when_any(repeat_effect_until(just(false)));
-  // sync_wait(std::move(s));
+  // exec::io_uring_context ctx;
+  // auto sche = ctx.get_scheduler();
   //
-  stdexec::sync_wait(exec::when_any(
-    exec::schedule_after(sche, 1s) | stdexec::then([] { std::cout << "Hello, 1!\n"; })
-      | stdexec::upon_stopped([] { std::cout << "Hello, 1, stopped.\n"; }),
-    exec::schedule_after(sche, 500ms) | stdexec::then([] { std::cout << "Hello, 2!\n"; })
-      | stdexec::upon_stopped([] { std::cout << "Hello, 2, stopped.\n"; })));
-
-
-  // sender auto s33 = schedule_after(sche, 1s) | then([] {});
-  // sender auto s4 = when_any(s33, s33);
-  // sender auto s5 = stdexec::then(std::move(s4), [](auto&&...) { return true; });
-  // sender auto s6 = exec::repeat_effect_until(std::move(s5));
-  // sync_wait(std::move(s6));
-
-  // sender auto t1 = when_any(schedule_after(sche, 1s) | then([] noexcept { return true; }));
-  // sender auto t1 = when_any(schedule_after(sche, 1s));
-  // sender auto t2 = stdexec::then(std::move(t1), [](auto&&...) noexcept { return true; });
-  // sender auto t3 = exec::repeat_effect_until(std::move(t2));
-  // sender auto t4 = then(std::move(t3), [](auto&&...) noexcept {});
-  // sync_wait(std::move(t4));
+  // std::jthread j([&]() { ctx.run_until_empty(); });
   //
   //
-  // auto p1 = when_any(schedule_after(sche, 1s) | then([] noexcept {})) //
-  //         | then([](auto&&...) { return true; })                      //
-  //         | repeat_effect_until()                                     //
-  //         | then([](auto&&...) { return 1; });
-  // sync_wait(std::move(p1));
+  // sender auto s0 = when_any(just(true));
+  // sender auto s1 = then(std::move(s0), [](bool) { return 1; });
+  // sender auto s = repeat_effect_until(std::move(s1));
+  // // sender auto s1 = then(when_any(just(true)), [] {});
+  // stdexec::sync_wait(std::move(s));
+  //
+  // sender auto x1 = repeat_effect_until(when_any(just(true)));
+  // stdexec::connect(std::move(x1), any_receiver{});
 
-
-  // -----------------------------------------------------------
-
-  // sender auto s = exec::when_any(exec::schedule_after(sche, 5s) | then([] {
-  //                                  cout << "5s";
-  //                                  return 1;
-  //                                })); //
-
-  // sender auto s2 = exec::when_any(just(true));
-  // sender auto s3 = repeat_effect_until(std::move(s2));
-
-  // sync_wait(std::move(s3));
-
-  // sender auto s1 = then(std::move(s), [](int n) { cout << "when_any ok\n"; });
-  // sync_wait(when_any(std::move(s), ctx.run(exec::until::empty)));
-
-  // exec::repeat_effect_until(std::move(s));
-
+  // sync_wait(std::move(x1));
 
   // stdexec::sender auto s = prepare_server(server)                   //
   //                          | stdexec::then(load_config())           //
@@ -115,11 +104,3 @@ int main() {
 
   return 0;
 }
-
-// sender auto s1 = exec::when_any(exec::schedule_after(sche, 1s), exec::schedule_after(sche, 1ms))
-//                | stdexec::then([](auto&&...) { return std::error_code(); })
-//                | then([](auto&&...) { return true; }) //
-//                | exec::repeat_effect_until() | let_value([](auto&&...) { return just(); });
-// sync_wait(std::move(s1));
-//
-//
