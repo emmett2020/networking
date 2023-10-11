@@ -58,12 +58,14 @@ namespace net::http1 {
     kStaleParser,
     kShortRead,
     kInvalidResponse,
+    kRecvTimeout,
     kRecvRequestTimeoutWithNothing,
     kRecvRequestLineTimeout,
     kRecvRequestHeadersTimeout,
     kRecvRequestBodyTimeout,
+    kSendTimeout,
     kSendResponseTimeoutWithNothing,
-    kSendResponseHeadersTimeout,
+    kSendResponseLineAndHeadersTimeout,
     kSendResponseBodyTimeout
   };
 
@@ -149,6 +151,8 @@ namespace net::http1 {
         return "unexpected eof in body";
       case Error::kInvalidResponse:
         return "invalid response";
+      case Error::kRecvTimeout:
+        return "receive timeout";
       case Error::kRecvRequestTimeoutWithNothing:
         return "receive request timeout with nothing";
       case Error::kRecvRequestLineTimeout:
@@ -157,9 +161,11 @@ namespace net::http1 {
         return "receive request headers timeout";
       case Error::kRecvRequestBodyTimeout:
         return "receive request body timeout";
+      case Error::kSendTimeout:
+        return "send timeout";
       case Error::kSendResponseTimeoutWithNothing:
         return "send response timeout with nothing";
-      case Error::kSendResponseHeadersTimeout:
+      case Error::kSendResponseLineAndHeadersTimeout:
         return "send response headers timeout";
       case Error::kSendResponseBodyTimeout:
         return "send response body timeout";

@@ -87,17 +87,17 @@ namespace net::tcp {
     http1::Response response_{};
   };
 
+  using ConstBuffer = std::span<const std::byte>;
+  using MutableBuffer = std::span< std::byte>;
+
   // WARN: useless
-  inline auto CopyArray(std::span<std::byte> buffer) noexcept -> std::string {
+  inline auto CopyArray(ConstBuffer buffer) noexcept -> std::string {
     std::string ss;
     for (auto b: buffer) {
       ss.push_back(static_cast<char>(b));
     }
     return ss;
   }
-
-  using ConstBuffer = std::span<const std::byte>;
-  using MutableBuffer = std::span< std::byte>;
 
   // for client receive server's response
   struct SocketRecvConfig {
@@ -191,7 +191,7 @@ namespace net::tcp {
     void Run() noexcept;
 
     // just(Request) or just_error(error_code)
-    ex::sender auto CreateRequest(TcpSocketHandle socket, uint32_t reuse_cnt) noexcept;
+    ex::sender auto CreateRequest(SocketRecvMeta meta) noexcept;
 
     ex::sender auto SendResponse(SocketSendMeta meta) noexcept;
 
@@ -199,12 +199,14 @@ namespace net::tcp {
 
     ex::sender auto SendResponseBody(TcpSocketHandle socket, ConstBuffer buffer);
 
-    ex::sender auto WaitToAlarm(uint32_t milliseconds) noexcept {
+    ex::sender auto Alarm(uint32_t milliseconds) noexcept {
       return exec::schedule_after(
         context_.get_scheduler(), std::chrono::milliseconds(milliseconds));
     }
 
-    ex::sender auto ReadOnce(SocketRecvMeta& meta, uint32_t time_ms) noexcept;
+    ex::sender auto RecvOnce(TcpSocketHandle socket, MutableBuffer buffer, uint32_t time_ms);
+
+    ex::sender auto RecvOnce(TcpSocketHandle socket, MutableBuffer buffer);
 
 
    private:

@@ -206,7 +206,7 @@ namespace net::http1 {
     kScriptServerError = 544,
   };
 
-  constexpr std::string_view HttpStatusCodeToString(HttpStatusCode code) noexcept {
+  inline std::string HttpStatusCodeToString(HttpStatusCode code) noexcept {
     // TODO(xiaoming): refactor a sufficient way
     return std::to_string(static_cast<uint32_t>(code));
   }

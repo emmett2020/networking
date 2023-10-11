@@ -19,6 +19,7 @@
 
 /* #include <exec/variant_sender.hpp> */
 
+#include <span>
 #include <stdexec/execution.hpp>
 #include <thread>
 #include "exec/linux/io_uring_context.hpp"
@@ -32,6 +33,8 @@
 #include "sio/net_concepts.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/let_value_each.hpp"
+#include "tcp/tcp_connection.h"
+#include <utils/stdexec_util.h>
 
 using namespace std; // NOLINT
 
@@ -69,9 +72,46 @@ struct any_receiver {
   }
 };
 
+ex::sender auto WaitToAlarm(io_uring_context& ctx, uint32_t milliseconds) noexcept {
+  return exec::schedule_after(ctx.get_scheduler(), std::chrono::milliseconds(milliseconds));
+}
+
 int main() {
 
   static_assert(__nothrow_decay_copyable<any_receiver>);
+
+  io_uring_context ctx;
+
+
+  using TcpSocketHandle = sio::io_uring::socket_handle<sio::ip::tcp>;
+  TcpSocketHandle socket{ctx, 1, sio::ip::tcp::v4()};
+
+  std::string buffer;
+  buffer.resize(1024);
+  auto s = std::span(buffer);
+  auto ss = std::as_writable_bytes(s);
+
+  auto read = sio::async::read_some(socket, ss);
+  // auto read = just(1000);
+
+  auto alarm = WaitToAlarm(ctx, 5000) //
+             | let_value([] { return ex::just_error(false); });
+
+  std::jthread thr([&ctx] { ctx.run_until_empty(); });
+
+  auto x = ex::when_any(read, alarm) //
+         | then([](std::size_t nbytes) {
+             //
+             ::printf("nbytes: %d\n", nbytes); // NOLINT
+           })                                  //
+         | upon_error([]<class E>(E f) {
+             if constexpr (std::same_as<E, bool>) {
+               cout << f << endl;
+             }
+           });
+
+  sync_wait(std::move(x));
+
 
   // exec::io_uring_context ctx;
   // auto sche = ctx.get_scheduler();
