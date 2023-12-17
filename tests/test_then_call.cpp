@@ -105,6 +105,7 @@ TEST_CASE("test the order of then_call_t", "[utils.then_call]") {
 }
 
 TEST_CASE("then_call with then_call", "[utils.then_call]") {
+
   int num = 0;
   stdexec::sender auto start = then_call(stdexec::just(), [&num] {
     CHECK(num == 0);

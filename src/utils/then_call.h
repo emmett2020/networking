@@ -34,31 +34,18 @@ concept class_type = std::is_class_v<T>;
 struct then_call_t {
   template <stdexec::sender Prev, stdexec::__movable_value Func, typename... Args>
   auto operator()(Prev&& prev, Func func, Args&&... arguments) const {
-
-    return stdexec::let_value(
-      static_cast<Prev&&>(prev),
-      [func, args_tuple = std::tuple<Args...>(std::forward<Args>(arguments)...)](
-        auto&&... result) mutable noexcept { //
-        using RetType = decltype(std::apply(
+    auto wrapper =
+      [func,
+       args_tuple = std::tuple<Args...>(std::forward<Args>(arguments)...)]<typename... PrevRes>(
+        PrevRes&&... result) mutable noexcept {
+        return std::apply(
           [func, &result...](auto&... args) {
-            return func(std::move(result)..., std::forward<Args>(args)...);
+            return func(static_cast<PrevRes&&>(result)..., std::forward<Args>(args)...);
           },
-          args_tuple));
-        if constexpr (std::same_as<RetType, void>) {
-          std::apply(
-            [func, &result...](auto&... args) {
-              return func(std::move(result)..., std::forward<Args>(args)...);
-            },
-            args_tuple);
-          return stdexec::just();
-        } else {
-          return stdexec::just(std::apply(
-            [func, &result...](auto&... args) {
-              return func(std::move(result)..., std::forward<Args>(args)...);
-            },
-            args_tuple));
-        }
-      });
+          args_tuple);
+      };
+
+    return stdexec::then(static_cast<Prev&&>(prev), wrapper);
   }
 
   template <stdexec::__movable_value Func, typename... Args>
@@ -72,22 +59,21 @@ struct then_call_t {
 
   // call class type
   template < stdexec::sender Prev, class_type ClassType, is_member_function Func, typename... Args> //
-  auto operator()(Prev&& prev, ClassType* instance, Func member_func, Args&&... args) const {
-    auto func = [&instance, member_func]<typename... MemberArgs>(MemberArgs&&... member_args) {
-      (instance->*member_func)(static_cast<MemberArgs&&>(member_args)...);
-    };
-    return operator()(static_cast<Prev&&>(prev), func, static_cast<Args&&>(args)...);
+  auto operator()(Prev&& prev, ClassType* instance, Func member_func, Args&&... arguments) const {
+    auto func =
+      [&instance,
+       member_func,
+       args_tuple = std::tuple<Args...>(std::forward<Args>(arguments)...)]<typename... PrevRes>(
+        PrevRes&&... result) mutable noexcept {
+        return std::apply(
+          [&instance, member_func, &result...](auto&... args) {
+            return (instance->*member_func)(
+              static_cast<PrevRes&&>(result)..., std::forward<Args>(args)...);
+          },
+          args_tuple);
+      };
 
-    // return stdexec::let_value(
-    //   static_cast<Prev&&>(prev), [func, &args...](auto&&... result) noexcept { //
-    //     using RetType = decltype(func(std::move(result)..., static_cast<Args&&>(args)...));
-    //     if constexpr (std::same_as<RetType, void>) {
-    //       func(std::move(result)..., args...);
-    //       return stdexec::just();
-    //     } else {
-    //       return stdexec::just(func(std::move(result)..., args...));
-    //     }
-    //   });
+    return stdexec::then(static_cast<Prev&&>(prev), func);
   }
 
   template <class_type ClassType, is_member_function Func, typename... Args>
@@ -96,7 +82,7 @@ struct then_call_t {
     return {
       {},
       {},
-      {instance, static_cast<Func&&>(member_func), static_cast<Args&&>(args)...}
+      {instance, member_func, static_cast<Args&&>(args)...}
     };
   }
 };
