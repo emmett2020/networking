@@ -1,0 +1,137 @@
+#include <catch2/catch_test_macros.hpp>
+#include "utils/then_call.h"
+#include <stdexec/execution.hpp>
+#include <type_traits>
+
+TEST_CASE("Use lambda as function, the lambda uses empty capture list.", "[utils.then_call]") {
+  stdexec::sender auto task = then_call(
+    stdexec::just(1),
+    [](int a, int b) -> int {
+      return a + b;
+      printf("a=%d,b=%d\n", a, b);
+    },
+    2);
+  // auto ret = stdexec::sync_wait(std::move(task));
+  auto ret = stdexec::sync_wait(std::move(task));
+  CHECK(ret.has_value());
+  CHECK(std::get<0>(ret.value()) == 3);
+}
+
+//   stdexec::just(1), [](int a, int&& b) { return a + b; }, 2);
+
+TEST_CASE("test lambda with reference capture list", "[utils.then_call]") {
+  int b = 2;
+  stdexec::sender auto task = then_call(stdexec::just(1), [&b](int a) { return a + b; });
+  auto ret = stdexec::sync_wait(std::move(task));
+  CHECK(ret.has_value());
+  CHECK(std::get<0>(ret.value()) == 3);
+}
+
+TEST_CASE("reference capture list", "[utils.then_call]") {
+  int b = 2;
+  stdexec::sender auto task = then_call(stdexec::just(1), [&b](int a) { b = 3; });
+  auto ret = stdexec::sync_wait(std::move(task));
+  CHECK(ret.has_value());
+  CHECK(b == 3);
+}
+
+struct NonCopyable {
+  NonCopyable() = default;
+  NonCopyable(const NonCopyable&) = delete;
+  NonCopyable& operator=(const NonCopyable&) = delete;
+  int value = 0;
+};
+
+struct Foo {
+  void MemberFunc(int n, int& m) {
+    m = n;
+  }
+};
+
+struct Bar {
+  void MemberFunc(int n, int& m) {
+    m = n;
+  }
+};
+
+TEST_CASE("Use non-copyable arguments ", "[utils.then_call]") {
+  NonCopyable non_copyable;
+
+  stdexec::sender auto task = then_call(stdexec::just(1), [&non_copyable](int a) {
+    non_copyable.value = 3;
+  });
+  auto ret = stdexec::sync_wait(std::move(task));
+  CHECK(ret.has_value());
+  CHECK(non_copyable.value == 3);
+}
+
+TEST_CASE("Test member func arguments ", "[utils.then_call]") {
+  Foo foo;
+  int m = 0;
+  stdexec::sender auto task = then_call(stdexec::just(1), &foo, &Foo::MemberFunc, m);
+  auto ret = stdexec::sync_wait(std::move(task));
+  CHECK(ret.has_value());
+  CHECK(m == 1);
+}
+
+TEST_CASE("Binder back member func arguments ", "[utils.then_call]") {
+  Foo foo;
+  int m = 0;
+  stdexec::sender auto task = stdexec::just(1) | then_call(&foo, &Foo::MemberFunc, m);
+  auto ret = stdexec::sync_wait(std::move(task));
+  CHECK(ret.has_value());
+  CHECK(m == 1);
+}
+
+TEST_CASE("test lambda with void return", "[utils.then_call]") {
+  stdexec::sender auto task = then_call(stdexec::just(1), [](int a) {});
+  auto ret = stdexec::sync_wait(std::move(task));
+  CHECK(ret.has_value());
+}
+
+TEST_CASE("test the order of then_call_t", "[utils.then_call]") {
+  int num = 0;
+  stdexec::sender auto prev = stdexec::then(stdexec::just(), [&num] {
+    CHECK(num == 0);
+    ++num;
+  });
+  stdexec::sender auto task = then_call(std::move(prev), [&num] {
+    CHECK(num == 1);
+    return ++num;
+  });
+  auto ret = stdexec::sync_wait(std::move(task));
+  CHECK(ret.has_value());
+  CHECK(std::get<0>(ret.value()) == 2);
+}
+
+TEST_CASE("then_call with then_call", "[utils.then_call]") {
+  int num = 0;
+  stdexec::sender auto start = then_call(stdexec::just(), [&num] {
+    CHECK(num == 0);
+    ++num;
+  });
+  stdexec::sender auto task1 = then_call(std::move(start), [&num] {
+    CHECK(num == 1);
+    ++num;
+  });
+  stdexec::sender auto task2 = then_call(std::move(task1), [&num] {
+    CHECK(num == 2);
+    ++num;
+  });
+  stdexec::sender auto task3 = then_call(std::move(task2), [&num] {
+    CHECK(num == 3);
+    ++num;
+  });
+  stdexec::sender auto task4 = then_call(std::move(task3), [&num] {
+    CHECK(num == 4);
+    ++num;
+  });
+  stdexec::sender auto task5 = then_call(std::move(task4), [&num] {
+    CHECK(num == 5);
+    return ++num;
+  });
+
+  auto ret = stdexec::sync_wait(std::move(task5));
+  CHECK(ret.has_value());
+  CHECK(std::get<0>(ret.value()) == 6);
+}
