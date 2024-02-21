@@ -78,70 +78,16 @@ ex::sender auto WaitToAlarm(io_uring_context& ctx, uint32_t milliseconds) noexce
 }
 
 int main() {
-
-  static_assert(__nothrow_decay_copyable<any_receiver>);
-
-  io_uring_context ctx;
-
-
-  using TcpSocketHandle = sio::io_uring::socket_handle<sio::ip::tcp>;
-  TcpSocketHandle socket{ctx, 1, sio::ip::tcp::v4()};
-
-  std::string buffer;
-  buffer.resize(1024);
-  auto s = std::span(buffer);
-  auto ss = std::as_writable_bytes(s);
-
-  auto read = sio::async::read_some(socket, ss);
-  // auto read = just(1000);
-
-  auto alarm = WaitToAlarm(ctx, 5000) //
-             | let_value([] { return ex::just_error(false); });
-
-  std::jthread thr([&ctx] { ctx.run_until_empty(); });
-
-  auto x = ex::when_any(read, alarm) //
-         | then([](std::size_t nbytes) {
-             //
-             ::printf("nbytes: %d\n", nbytes); // NOLINT
-           })                                  //
-         | upon_error([]<class E>(E f) {
-             if constexpr (std::same_as<E, bool>) {
-               cout << f << endl;
-             }
-           });
-
-  sync_wait(std::move(x));
-
-
   // exec::io_uring_context ctx;
   // auto sche = ctx.get_scheduler();
-  //
   // std::jthread j([&]() { ctx.run_until_empty(); });
-  //
-  //
-  // sender auto s0 = when_any(just(true));
-  // sender auto s1 = then(std::move(s0), [](bool) { return 1; });
-  // sender auto s = repeat_effect_until(std::move(s1));
-  // // sender auto s1 = then(when_any(just(true)), [] {});
-  // stdexec::sync_wait(std::move(s));
-  //
-  // sender auto x1 = repeat_effect_until(when_any(just(true)));
-  // stdexec::connect(std::move(x1), any_receiver{});
+  net::tcp::Server server{"127.0.0.1", 1280};
+  server.Run();
 
-  // sync_wait(std::move(x1));
-
-  // stdexec::sender auto s = prepare_server(server)                   //
-  //                          | stdexec::then(load_config())           //
-  //                          | stdexec::then(register_handler())      //
-  //                          | stdexec::then(some_op())               //
-  //                          | stdexec::then(start_listening())       //
-  //                          | stdexec::unop_error(error_handler());  //
 
   // stdexec::sync_wait(std::move(s));
-  std::cout << "hello world" << std::endl;
-  std::cout << "you can find me by xiaomingZhang2020@outlook.com" << std::endl;
-  std::cout << std::endl;
+  std::cout << "hello world\n";
+  std::cout << "you can find me by xiaomingZhang2020@outlook.com\n";
 
   return 0;
 }

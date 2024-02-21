@@ -19,11 +19,13 @@
 #include <stdexec/execution.hpp>
 #include <exec/variant_sender.hpp>
 
-template <class ThenSender, class ElseSender>
-exec::variant_sender<ThenSender, ElseSender>
-  if_then_else(bool condition, ThenSender then, ElseSender otherwise) { // NOLINT
-  if (condition) {
-    return then;
+namespace ex {
+  template <class ThenSender, class ElseSender>
+  exec::variant_sender<ThenSender, ElseSender>
+    if_then_else(bool condition, ThenSender then, ElseSender otherwise) { // NOLINT
+    if (condition) {
+      return then;
+    }
+    return otherwise;
   }
-  return otherwise;
 }

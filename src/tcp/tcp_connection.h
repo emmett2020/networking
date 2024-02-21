@@ -18,6 +18,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -33,6 +34,7 @@
 #include <sio/io_concepts.hpp>
 #include <sio/ip/address.hpp>
 #include <stdexec/execution.hpp>
+#include <utility>
 
 #include "exec/timed_scheduler.hpp"
 #include "http1/http_common.h"
@@ -122,14 +124,13 @@ namespace net::tcp {
     std::size_t bytes_size{0};
   };
 
-  struct SocketRecvMeta {
-    TcpSocketHandle socket;
+  struct socket_recv_meta {
     std::array<std::byte, 8192> recv_buffer{};
     std::size_t unparsed_size{0};
     http1::Request request{};
     http1::RequestParser parser{&request};
     std::error_code ec{};
-    std::uint32_t reuse_cnt{0};
+    std::uint64_t recv_cnt = 0;
   };
 
   // NOTE: some principle
@@ -149,15 +150,6 @@ namespace net::tcp {
     return s;
   }
 
-  //  request -> response
-  inline auto Handle(http1::Request&& request) noexcept -> auto {
-    http1::Response response;
-    // make response
-    response.status_code = http1::HttpStatusCode::kOK;
-    response.version = request.version;
-    return response;
-  }
-
   struct SocketSendMeta {
     TcpSocketHandle socket;
     std::string start_line_and_headers;
@@ -167,9 +159,17 @@ namespace net::tcp {
     uint32_t send_once_max_wait_time_ms;
   };
 
-  struct HostSocketEnv {
-    std::uint32_t reuse_cnt = 0;
+  struct TcpSession {
+    TcpSocketHandle socket;
+    exec::io_uring_context* ctx{nullptr};
+    std::size_t id = 0;
     bool need_keep_alive = false;
+    std::size_t keep_alive_time_ms = 12000;
+    std::size_t reuse_cnt = 0;
+    std::size_t total_send_size = 0;
+    std::size_t total_recv_size = 0;
+    std::size_t last_recv_size = 0;
+    std::size_t last_send_size = 0;
   };
 
   // TODO(xiaoming): how to make ipv6?
@@ -190,37 +190,66 @@ namespace net::tcp {
 
     void Run() noexcept;
 
-    // just(Request) or just_error(error_code)
-    ex::sender auto CreateRequest(SocketRecvMeta meta) noexcept;
+    // when milliseconds passed, err will occur.
+    // auto alarm(uint64_t milliseconds, http1::Error err) noexcept;
 
-    ex::sender auto SendResponse(SocketSendMeta meta) noexcept;
+    //  request -> response
+    http1::Response&& Handle(http1::Request&& request) noexcept {
+      http1::Response response;
+      // make response
+      response.status_code = http1::HttpStatusCode::kOK;
+      response.version = request.version;
+      return std::move(response);
+    }
+
+    // auto create_request(TcpSession& session) noexcept;
+
+    ex::sender auto SendResponse1(SocketSendMeta meta) noexcept;
+
+    void SendResponse(http1::Response&& res, TcpSession& session) noexcept {
+    }
 
     ex::sender auto SendResponseLineAndHeaders(TcpSocketHandle socket, ConstBuffer buffer);
 
     ex::sender auto SendResponseBody(TcpSocketHandle socket, ConstBuffer buffer);
 
-    ex::sender auto Alarm(uint32_t milliseconds) noexcept {
-      return exec::schedule_after(
-        context_.get_scheduler(), std::chrono::milliseconds(milliseconds));
+    template <class Sender>
+    ex::sender auto ExecuteWithTimeout(
+      Sender&& task,
+      uint32_t timeout_milliseconds,
+      http1::Error error) noexcept {
+      return ex::when_any(
+        std::forward<Sender>(task),
+        ex::schedule_after(
+          context_.get_scheduler(), std::chrono::milliseconds(timeout_milliseconds))
+          | ex::let_value([error] { return ex::just_error(std::error_code(error)); }));
     }
 
-    ex::sender auto RecvOnce(TcpSocketHandle socket, MutableBuffer buffer, uint32_t time_ms);
-
-    ex::sender auto RecvOnce(TcpSocketHandle socket, MutableBuffer buffer);
+    // auto recv(TcpSocketHandle socket, MutableBuffer buffer, uint32_t time_ms);
 
 
-    http1::Request&& SetReuseFlag(http1::Request&& request, HostSocketEnv& socket_env);
+    http1::Request&& SetReuseFlag(http1::Request&& request, TcpSession& conn);
 
+
+    bool UpdateReuseCnt(TcpSession& conn);
+
+
+    http1::Response&& UpdateSession(http1::Response&& response, TcpSession& connection);
+
+    bool NeedKeepAlive(TcpSession& conn) const {
+      return true;
+      // return conn.NeedKeepAlive();
+    }
+
+    http1::Request&& UpdateRequest(http1::Request&& req);
+
+
+    http1::Response&& UpdateResponse(http1::Response&& res);
 
    private:
     exec::io_uring_context context_{};
     sio::ip::endpoint endpoint_{};
     TcpAcceptor acceptor_;
-    std::unordered_map<SessionId, Session> sessions_;
-    std::unordered_map<std::string, DomainConfig> domain_configs_;
-    SocketRecvConfig server_recv_config_{};
-    SocketSendConfig server_send_config_{};
-    uint32_t keep_alive_time_ms_{12000};
   };
 
 } // namespace net::tcp

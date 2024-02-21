@@ -1,10 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
-#include "utils/then_call.h"
+#include "utils/then_value.h"
 #include <stdexec/execution.hpp>
 #include <type_traits>
 
-TEST_CASE("Use lambda as function, the lambda uses empty capture list.", "[utils.then_call]") {
-  stdexec::sender auto task = then_call(
+using namespace ex;
+
+TEST_CASE("Use lambda as function, the lambda uses empty capture list.", "[utils.then_value]") {
+  stdexec::sender auto task = then_value(
     stdexec::just(1),
     [](int a, int b) -> int {
       return a + b;
@@ -19,17 +21,17 @@ TEST_CASE("Use lambda as function, the lambda uses empty capture list.", "[utils
 
 //   stdexec::just(1), [](int a, int&& b) { return a + b; }, 2);
 
-TEST_CASE("test lambda with reference capture list", "[utils.then_call]") {
+TEST_CASE("test lambda with reference capture list", "[utils.then_value]") {
   int b = 2;
-  stdexec::sender auto task = then_call(stdexec::just(1), [&b](int a) { return a + b; });
+  stdexec::sender auto task = then_value(stdexec::just(1), [&b](int a) { return a + b; });
   auto ret = stdexec::sync_wait(std::move(task));
   CHECK(ret.has_value());
   CHECK(std::get<0>(ret.value()) == 3);
 }
 
-TEST_CASE("reference capture list", "[utils.then_call]") {
+TEST_CASE("reference capture list", "[utils.then_value]") {
   int b = 2;
-  stdexec::sender auto task = then_call(stdexec::just(1), [&b](int a) { b = 3; });
+  stdexec::sender auto task = then_value(stdexec::just(1), [&b](int a) { b = 3; });
   auto ret = stdexec::sync_wait(std::move(task));
   CHECK(ret.has_value());
   CHECK(b == 3);
@@ -54,10 +56,10 @@ struct Bar {
   }
 };
 
-TEST_CASE("Use non-copyable arguments ", "[utils.then_call]") {
+TEST_CASE("Use non-copyable arguments ", "[utils.then_value]") {
   NonCopyable non_copyable;
 
-  stdexec::sender auto task = then_call(stdexec::just(1), [&non_copyable](int a) {
+  stdexec::sender auto task = then_value(stdexec::just(1), [&non_copyable](int a) {
     non_copyable.value = 3;
   });
   auto ret = stdexec::sync_wait(std::move(task));
@@ -65,37 +67,37 @@ TEST_CASE("Use non-copyable arguments ", "[utils.then_call]") {
   CHECK(non_copyable.value == 3);
 }
 
-TEST_CASE("Test member func arguments ", "[utils.then_call]") {
+TEST_CASE("Test member func arguments ", "[utils.then_value]") {
   Foo foo;
   int m = 0;
-  stdexec::sender auto task = then_call(stdexec::just(1), &foo, &Foo::MemberFunc, m);
+  stdexec::sender auto task = then_value(stdexec::just(1), &foo, &Foo::MemberFunc, m);
   auto ret = stdexec::sync_wait(std::move(task));
   CHECK(ret.has_value());
   CHECK(m == 1);
 }
 
-TEST_CASE("Binder back member func arguments ", "[utils.then_call]") {
+TEST_CASE("Binder back member func arguments ", "[utils.then_value]") {
   Foo foo;
   int m = 0;
-  stdexec::sender auto task = stdexec::just(1) | then_call(&foo, &Foo::MemberFunc, m);
+  stdexec::sender auto task = stdexec::just(1) | then_value(&foo, &Foo::MemberFunc, m);
   auto ret = stdexec::sync_wait(std::move(task));
   CHECK(ret.has_value());
   CHECK(m == 1);
 }
 
-TEST_CASE("test lambda with void return", "[utils.then_call]") {
-  stdexec::sender auto task = then_call(stdexec::just(1), [](int a) {});
+TEST_CASE("test lambda with void return", "[utils.then_value]") {
+  stdexec::sender auto task = then_value(stdexec::just(1), [](int a) {});
   auto ret = stdexec::sync_wait(std::move(task));
   CHECK(ret.has_value());
 }
 
-TEST_CASE("test the order of then_call_t", "[utils.then_call]") {
+TEST_CASE("test the order of then_value_t", "[utils.then_value]") {
   int num = 0;
   stdexec::sender auto prev = stdexec::then(stdexec::just(), [&num] {
     CHECK(num == 0);
     ++num;
   });
-  stdexec::sender auto task = then_call(std::move(prev), [&num] {
+  stdexec::sender auto task = then_value(std::move(prev), [&num] {
     CHECK(num == 1);
     return ++num;
   });
@@ -104,30 +106,30 @@ TEST_CASE("test the order of then_call_t", "[utils.then_call]") {
   CHECK(std::get<0>(ret.value()) == 2);
 }
 
-TEST_CASE("then_call with then_call", "[utils.then_call]") {
+TEST_CASE("then_value with then_value", "[utils.then_value]") {
 
   int num = 0;
-  stdexec::sender auto start = then_call(stdexec::just(), [&num] {
+  stdexec::sender auto start = then_value(stdexec::just(), [&num] {
     CHECK(num == 0);
     ++num;
   });
-  stdexec::sender auto task1 = then_call(std::move(start), [&num] {
+  stdexec::sender auto task1 = then_value(std::move(start), [&num] {
     CHECK(num == 1);
     ++num;
   });
-  stdexec::sender auto task2 = then_call(std::move(task1), [&num] {
+  stdexec::sender auto task2 = then_value(std::move(task1), [&num] {
     CHECK(num == 2);
     ++num;
   });
-  stdexec::sender auto task3 = then_call(std::move(task2), [&num] {
+  stdexec::sender auto task3 = then_value(std::move(task2), [&num] {
     CHECK(num == 3);
     ++num;
   });
-  stdexec::sender auto task4 = then_call(std::move(task3), [&num] {
+  stdexec::sender auto task4 = then_value(std::move(task3), [&num] {
     CHECK(num == 4);
     ++num;
   });
-  stdexec::sender auto task5 = then_call(std::move(task4), [&num] {
+  stdexec::sender auto task5 = then_value(std::move(task4), [&num] {
     CHECK(num == 5);
     return ++num;
   });
