@@ -322,8 +322,8 @@ namespace net::http1 {
     enum class MessageState {
       kNothingYet,
       kStartLine,
-      kHeader,
       kExpectingNewline,
+      kHeader,
       kBody,
       kCompleted
     };
@@ -1439,7 +1439,7 @@ namespace net::http1 {
 
     // Inner request. The request pointer must be made available during parser
     // parsing.
-    // TODO: use unique_ptr
+    // TODO(xiaoming): use unique_ptr
     Message* message_{nullptr};
   };
 
