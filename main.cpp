@@ -13,81 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <any>
 #include <fmt/format.h>
 #include <iostream>
-
-/* #include <exec/variant_sender.hpp> */
-
-#include <span>
 #include <stdexec/execution.hpp>
-#include <thread>
-#include "exec/linux/io_uring_context.hpp"
-#include "exec/repeat_effect_until.hpp"
-#include "exec/timed_scheduler.hpp"
-#include "exec/when_any.hpp"
-#include "sio/io_uring/socket_handle.hpp"
-
-
-#include "sio/ip/endpoint.hpp"
-#include "sio/ip/tcp.hpp"
-#include "sio/net_concepts.hpp"
-#include "sio/sequence/ignore_all.hpp"
-#include "sio/sequence/let_value_each.hpp"
-#include "tcp/tcp_connection.h"
 #include <utils/stdexec_util.h>
 
-using namespace std; // NOLINT
+#include "tcp/tcp_connection.h"
 
-using stdexec::just;
-using stdexec::let_value;
-using stdexec::sync_wait;
-using stdexec::then;
-using exec::when_any;
-using stdexec::when_all;
-
-
-using namespace chrono_literals;
 using namespace stdexec; // NOLINT
 using namespace exec;    // NOLINT
 using namespace std;     // NOLINT
 
-struct any_receiver {
-  template <class Sender>
-  auto set_next(exec::set_next_t, Sender&&) noexcept {
-    return stdexec::just();
-  }
-
-  void set_value(stdexec::set_value_t, auto&&...) && noexcept {
-  }
-
-  void set_stopped(stdexec::set_stopped_t) && noexcept {
-  }
-
-  template <class E>
-  void set_error(stdexec::set_error_t, E&&) && noexcept {
-  }
-
-  stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
-    return {};
-  }
-};
-
-ex::sender auto WaitToAlarm(io_uring_context& ctx, uint32_t milliseconds) noexcept {
-  return exec::schedule_after(ctx.get_scheduler(), std::chrono::milliseconds(milliseconds));
-}
-
 int main() {
-  // exec::io_uring_context ctx;
-  // auto sche = ctx.get_scheduler();
-  // std::jthread j([&]() { ctx.run_until_empty(); });
   net::tcp::Server server{"127.0.0.1", 1280};
-  server.Run();
+  net::tcp::start_server(server);
 
-
-  // stdexec::sync_wait(std::move(s));
   std::cout << "hello world\n";
   std::cout << "you can find me by xiaomingZhang2020@outlook.com\n";
+  std::string s;
 
   return 0;
 }

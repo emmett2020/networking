@@ -15,6 +15,8 @@ Checks: '
   -readability-magic-numbers,
   -readability-identifier-length,
   -readability-identifier-naming,
+
+  -misc-non-private-member-variables-in-classes,
 '
 WarningsAsErrors: '*'
 
