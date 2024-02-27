@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include <stdatomic.h>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -52,13 +51,14 @@ namespace net::tcp {
   using tcp_acceptor_handle = sio::io_uring::acceptor_handle<sio::ip::tcp>;
   using tcp_acceptor = sio::io_uring::acceptor<sio::ip::tcp>;
 
-  using session_id = int64_t;
 
-  using ConstBuffer = std::span<const std::byte>;
-  using MutableBuffer = std::span< std::byte>;
+  using const_buffer = std::span<const std::byte>;
+  using mutable_buffer = std::span< std::byte>;
+
+  static constexpr auto unlimited_timeout = std::chrono::seconds::max();
 
   // WARN: useless
-  inline auto CopyArray(ConstBuffer buffer) noexcept -> std::string {
+  inline auto CopyArray(const_buffer buffer) noexcept -> std::string {
     std::string ss;
     for (auto b: buffer) {
       ss.push_back(static_cast<char>(b));
@@ -84,15 +84,6 @@ namespace net::tcp {
     SocketSendConfig socket_send_config;
   };
 
-  struct socket_recv_meta {
-    std::array<std::byte, 8192> recv_buffer{};
-    std::size_t unparsed_size{0};
-    http1::Request request{};
-    http1::RequestParser parser{&request};
-    std::error_code ec{};
-    std::uint64_t recv_cnt = 0;
-  };
-
   // NOTE: some principle
   // 1. all temporary things use just to hold
   // 2. all long lived things saved in server
@@ -108,16 +99,55 @@ namespace net::tcp {
     uint32_t send_once_max_wait_time_ms;
   };
 
-  struct server_metric { };
+  struct server_metric {
+    uint64_t total_size = 0;
+  };
 
-  struct recv_metric { };
+  struct recv_metric {
+    using duration = std::chrono::seconds;
+    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
+    timepoint start_timestamp{};
+    timepoint end_timestamp{};
+    duration io_duration{0};
+    uint64_t total_size{0};
+    uint32_t recv_cnt{0};
+  };
 
-  struct send_metric { };
+  struct send_metric {
+    uint64_t total_size = 0;
+  };
 
-  struct recv_option { };
+  // TODO(xiaoming): could get the information from server yaml config.
+  // So it's not constexpr.
+  struct recv_option {
+    using duration = std::chrono::seconds;
+    duration total_timeout{0};
+    duration keepalive_timeout{0};
+  };
 
-  struct send_option { };
+  struct send_option {
+    using duration = std::chrono::seconds;
+    duration total_timeout{0};
+  };
 
+  struct socket_recv_handle {
+    using duration = std::chrono::seconds;
+    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
+
+    tcp_socket_handle socket;
+    std::array<std::byte, 8192> recv_buffer{};
+    std::size_t unparsed_size{0};
+    http1::Request request{};
+    http1::RequestParser parser{&request};
+    std::error_code ec{};
+    std::uint64_t recv_cnt = 0;
+    recv_metric metric{};
+    recv_option opt{};
+    duration remaining_timeout;
+    timepoint start_recv_timepoint;
+  };
+
+  // tcp session.
   struct tcp_session {
     explicit tcp_session(tcp_socket_handle socket)
       : socket(socket)
@@ -125,14 +155,16 @@ namespace net::tcp {
       , context(socket.context_) {
     }
 
-    static uint64_t make_session_id() noexcept {
+    using session_id = int64_t;
+
+    static session_id make_session_id() noexcept {
       static std::atomic_int64_t session_idx{0};
       ++session_idx;
       return session_idx.load();
     }
 
     exec::io_uring_context* context{nullptr};
-    std::size_t id = 0;
+    session_id id = 0;
     tcp_socket_handle socket;
     http1::Request request{};
     http1::Response response{};
