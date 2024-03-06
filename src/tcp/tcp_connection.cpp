@@ -26,6 +26,8 @@
 #include "sio/io_concepts.hpp"
 #include "stdexec/execution.hpp"
 #include "utils/if_then_else.h"
+#include "utils/timeout.h"
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -60,149 +62,108 @@ namespace net::tcp {
     }
   }
 
-  inline void initialize_remaning_time(socket_recv_handle& handle) {
-    if (handle.opt.keepalive_timeout != unlimited_timeout) {
-      handle.remaining_timeout = handle.opt.keepalive_timeout;
-    } else {
-      handle.remaining_timeout = handle.opt.total_timeout;
-    }
-  }
-
-  // TODO(xiaoming): move timepoint to the front?
-  auto update_time_metric(recv_option::duration dur, socket_recv_handle& handle) {
-    if (handle.metric.recv_cnt == 0) {
-      handle.metric.start_timestamp = std::chrono::system_clock::now();
-    }
-    handle.metric.end_timestamp = std::chrono::system_clock::now();
-    handle.metric.io_duration += dur;
-    ++handle.metric.recv_cnt;
-  }
-
-  // Update metrics
-  auto update_size_metric(std::size_t recv_size, socket_recv_handle& handle) {
-    handle.unparsed_size += recv_size;
-    handle.metric.total_size += recv_size;
-  }
-
-  // Receive some bytes then save to buffer.
-  // If received size is zero, kEndOfStream is set to downstream pipeline.
-  // return received size and update time.
-  auto recv_some(tcp_socket_handle socket, mutable_buffer buffer, recv_option::duration timeout) {
-    auto start = std::chrono::system_clock::now();
-    auto snd = sio::async::read_some(socket, buffer) //
-             | ex::let_value([start](std::size_t size) noexcept {
-                 using variant = ex::variant_sender<
-                   decltype(ex::just(0LU)),
-                   decltype(ex::just_error(http1::Error::kEndOfStream))>;
-                 if (size == 0) {
-                   return variant(ex::just_error(http1::Error::kEndOfStream));
-                 }
-                 auto io_duration = std::chrono::duration_cast<recv_option::duration>(
-                   std::chrono::system_clock::now() - start);
-                 return variant(ex::just(size));
-               });
-    return ex::when_any(
-      snd,
-      ex::schedule_after(socket.context_->get_scheduler(), timeout) //
-        | ex::let_error([] { return ex::just_error(http1::Error::kRecvTimeout); }));
-  }
-
-  std::error_code parse(socket_recv_handle& meta) {
-    std::string ss = CopyArray(meta.recv_buffer); // DEBUG
-    std::error_code ec{};                         // DEBUG
-    std::size_t parsed_size = meta.parser.Parse(ss, ec);
-    if (ec == http1::Error::kNeedMore) {
-      if (parsed_size < meta.unparsed_size) {
-        // WARN: This isn't efficient, a new way is needed.
-        //       Move unparsed data to the front of buffer.
-        meta.unparsed_size -= parsed_size;
-        ::memcpy(
-          meta.recv_buffer.begin(), meta.recv_buffer.begin() + parsed_size, meta.unparsed_size);
-      }
-    }
-    return ec;
-  }
-
   inline bool check_parse_done(std::error_code ec) {
     return ec && ec != http1::Error::kNeedMore;
   }
 
+  ex::sender auto parse_request(recv_state& state) {
+    std::string ss = CopyArray(state.buffer); // DEBUG
+    std::error_code ec{};                     // DEBUG
+    std::size_t parsed_size = state.parser.Parse(ss, ec);
+    if (ec == http1::Error::kNeedMore) {
+      if (parsed_size < state.unparsed_size) {
+        // WARN: This isn't efficient, a new way is needed.
+        //       Move unparsed data to the front of buffer.
+        state.unparsed_size -= parsed_size;
+        ::memcpy(state.buffer.begin(), state.buffer.begin() + parsed_size, state.unparsed_size);
+      }
+    }
+    return ex::just(check_parse_done(ec));
+  }
 
-  template <class Option>
-  concept option = requires(Option& opt) {
-    { opt.total_size };
-  };
+  ex::sender auto finished(recv_state&& state) {
+    return ex::if_then_else(
+      state.parser.State() == http1::RequestParser::MessageState::kCompleted,
+      ex::just(std::move(std::move(state).request), std::move(state).metric),
+      ex::just_error(detailed_error(state.parser.State())));
+  }
 
-  // auto recv_request(tcp_socket_handle socket, const recv_option& opt) noexcept {
-  //   std::cout << "Called create request.\n";
-  //   return ex::just(socket_recv_handle{.socket = socket}) //
-  //        | ex::let_value([&](socket_recv_handle& handle) {
-  //            handle.opt = opt;
-  //            auto update_recv_buffer = [&] {
-  //              return std::span{handle.recv_buffer}.subspan(handle.unparsed_size);
-  //            };
-  //            initialize_remaning_time(handle);
-  //            return recv_some(handle.socket, update_recv_buffer(), handle.remaining_timeout) //
-  //                 | ex::then([&](std::size_t recv_size, recv_option::duration dur) {
-  //                     update_data(recv_size, dur, handle);
-  //                     return check_parse_done(parse(handle));
-  //                   })
-  //                 | ex::repeat_effect_until() //
-  //                 | ex::let_value([&] {
-  //                     return ex::if_then_else(
-  //                       handle.parser.State() == http1::RequestParser::MessageState::kCompleted,
-  //                       ex::just(std::move(handle.request), handle.metric),
-  //                       ex::just_error(detailed_error(handle.parser.State())));
-  //                   });
-  //          });
-  // }
+  void initialize_state(recv_state& state, const recv_option& opt) {
+    if (opt.keepalive_timeout != unlimited_timeout) {
+      state.remaining_time = opt.keepalive_timeout;
+    } else {
+      state.remaining_time = opt.total_timeout;
+    }
+  }
 
-  // recv_option: per request option. so not constexpr.
-  // auto recv_request(tcp_socket_handle socket, recv_option opt) noexcept {
-  //   std::cout << "Called create request.\n";
-  //   return ex::just(socket_recv_handle{}) //
-  //        | ex::let_value([&](socket_recv_handle& handle) {
-  //            handle.opt = opt;
-  //            auto update_recv_buffer = [&] {
-  //              return std::span{handle.recv_buffer}.subspan(handle.unparsed_size);
-  //            };
-  //
-  //            return recv_some_timeout(socket, update_recv_buffer(), 11)
-  //                 | ex::then([&](uint64_t recv_size, uint64_t duration) {
-  //                     update_data(recv_size, duration, handle);
-  //                     return check_parse_done(parse(handle));
-  //                   })
-  //                 | ex::repeat_effect_until() //
-  //                 | ex::let_value([&] {
-  //                     return ex::if_then_else(
-  //                       handle.parser.State() == http1::RequestParser::MessageState::kCompleted,
-  //                       ex::just(std::move(handle.request), handle.metric),
-  //                       ex::just_error(get_detailed_error_by_state(handle.parser.State())));
-  //                   });
-  //          });
-  // }
+  void update_state(auto start, auto stop, std::size_t recv_size, recv_state& state) noexcept {
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(start - stop);
+    if (state.metric.time.first.time_since_epoch().count() == 0) {
+      state.metric.time.first = start;
+    }
+    state.metric.time.last = stop;
+    state.metric.time.elapsed += elapsed;
+    state.metric.size.total += recv_size;
+    state.unparsed_size += recv_size;
+    state.remaining_time -= elapsed;
+  }
 
-  // auto recv_request(TcpSession& session) noexcept {
-  //   std::cout << "Called create request.\n";
-  //   return ex::just(socket_recv_meta{}) //
-  //        | ex::let_value([&](socket_recv_meta& meta) {
-  //            auto update_recv_buffer = [&] {
-  //              return std::span{meta.recv_buffer}.subspan(meta.unparsed_size);
-  //            };
-  //
-  //            return recv(*session.ctx, session.socket, update_recv_buffer(), update_recv_time(meta))
-  //                 | ex::then([&](uint64_t recv_size) { update_data(recv_size, meta, session); })
-  //                 | ex::then([&] { return parse(meta); })
-  //                 | ex::then([&](std::error_code ec) { return check_parse_done(ec); })
-  //                 | ex::repeat_effect_until() //
-  //                 | ex::let_value([&] {
-  //                     return ex::if_then_else(
-  //                       meta.parser.State() == http1::RequestParser::MessageState::kCompleted,
-  //                       ex::just(std::move(meta.request)),
-  //                       ex::just_error(get_detailed_error_by_state(meta.parser.State())));
-  //                   });
-  //          });
-  // }
+  ex::sender auto check_recv_size(std::size_t recv_size) {
+    return ex::if_then_else(
+      recv_size != 0, ex::just(recv_size), ex::just_error(http1::Error::kEndOfStream));
+  }
+
+  // request, metrics
+  ex::sender auto recv_request(const tcp_session& session) noexcept {
+    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
+    return ex::just(recv_state{}) //
+         | ex::let_value([&](recv_state& state) {
+             auto recv_buffer = [&] {
+               return std::span{state.buffer}.subspan(state.unparsed_size);
+             };
+
+             auto scheduler = session.socket.context_->get_scheduler();
+             initialize_state(state, {});
+             return sio::async::read_some(session.socket, recv_buffer())                       //
+                  | ex::let_value(check_recv_size)                                             //
+                  | ex::timeout(scheduler, state.remaining_time)                               //
+                  | ex::let_stopped([] { return ex::just_error(http1::Error::kRecvTimeout); }) //
+                  | ex::let_value([&](timepoint start, timepoint stop, std::size_t recv_size) {
+                      update_state(start, stop, recv_size, state);
+                      return ex::just();
+                    })                                                  //
+                  | ex::let_value([&] { return parse_request(state); }) //
+                  | ex::repeat_effect_until()                           //
+                  | ex::let_value([&] { return finished(std::move(state)); });
+           });
+  }
+
+  ex::sender auto test_recv_request(const tcp_session& session) noexcept {
+    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
+    ex::sender auto sndr =
+      ex::just(recv_state{}) //
+      | ex::let_value([&](recv_state& state) {
+          auto recv_buffer = [&] {
+            return std::span{state.buffer}.subspan(state.unparsed_size);
+          };
+
+          auto scheduler = session.socket.context_->get_scheduler();
+          initialize_state(state, {});
+          return sio::async::read_some(session.socket, recv_buffer())                       //
+               | ex::let_value(check_recv_size)                                             //
+               | ex::timeout(scheduler, state.remaining_time)                               //
+               | ex::let_stopped([] { return ex::just_error(http1::Error::kRecvTimeout); }) //
+               | ex::let_value([&](timepoint start, timepoint stop, std::size_t recv_size) {
+                   update_state(start, stop, recv_size, state);
+                   return ex::just();
+                 })                                                  //
+               | ex::let_value([&] { return parse_request(state); }) //
+               | ex::repeat_effect_until()                           //
+               | ex::let_value([&] { return finished(std::move(state)); });
+        });
+    sync_wait(std::move(sndr));
+    return sndr;
+  }
 
   ex::sender auto handle_request(http1::Request& request) noexcept {
     http1::Response response;
@@ -210,16 +171,6 @@ namespace net::tcp {
     response.status_code = http1::HttpStatusCode::kOK;
     response.version = std::move(request).version;
     return ex::just(response);
-  }
-
-  ex::sender auto send(
-    io_uring_context& ctx,
-    tcp_socket_handle socket,
-    const_buffer buffer,
-    uint64_t time_ms,
-    http1::Error err) {
-    auto write = sio::async::write(socket, buffer);
-    return ex::when_any(write, alarm(ctx, time_ms, err));
   }
 
   ex::sender auto create_response(SocketSendMeta& meta) {
@@ -241,40 +192,6 @@ namespace net::tcp {
     std::cout << "send bytes: " << meta.total_send_size << "\n";
   }
 
-  send_metric
-    send_response(http1::Response& response, tcp_socket_handle socket, send_option opt) noexcept {
-    return send_metric{};
-  }
-
-  ex::sender auto
-    SendResponse(io_uring_context& ctx, SocketSendMeta meta, tcp_session& session) noexcept {
-    auto send_response =
-      create_response(meta) //
-      | ex::let_value([&] {
-          return send(
-            ctx,
-            meta.socket,
-            std::as_bytes(std::span(meta.start_line_and_headers)),
-            10000,
-            http1::Error::kSendResponseLineAndHeadersTimeout);
-        })
-      | ex::then([&](std::size_t send_size) { return update_data(send_size, meta, session); }) //
-      | ex::let_value([&] {
-          bool need_send_body = true;
-          return ex::if_then_else(
-            need_send_body,
-            send(
-              ctx,
-              meta.socket,
-              std::as_bytes(std::span(meta.response.Body())),
-              10000,
-              http1::Error::kSendResponseLineAndHeadersTimeout),
-            ex::just(0LU));
-        })
-      | ex::then([&](std::size_t send_size) { return update_data(send_size, meta, session); });
-    return send_response;
-  }
-
   bool check_keepalive(const http1::Request& request) noexcept {
     if (request.ContainsHeader(http1::kHttpHeaderConnection)) {
       return true;
@@ -292,7 +209,7 @@ namespace net::tcp {
   //   return std::move(response);
   // }
 
-  tcp_session create_session(tcp_socket_handle socket) {
+  tcp_session create_session(tcp_socket socket) {
     return tcp_session{socket};
   }
 
@@ -318,36 +235,26 @@ namespace net::tcp {
 
   void start_server(Server& server) noexcept {
     auto handles = sio::async::use_resources(
-      [&](tcp_acceptor_handle acceptor_handle) noexcept {
-        return sio::async::accept(acceptor_handle)
-             | sio::let_value_each([&](tcp_socket_handle socket) {
-                 // std::cout << "accepted one\n";
+      [&](tcp_acceptor_handle acceptor) noexcept {
+        return sio::async::accept(acceptor) //
+             | sio::let_value_each([&](tcp_socket socket) {
                  return ex::just(create_session(socket))          //
                       | ex::let_value([&](tcp_session& session) { //
-                          return recv_request(session.socket, server.recv_opt)
-                               | ex::let_value([&](http1::Request& req, recv_metric metrics) {
-                                   session.request = req;
-                                   server.update_metric(metrics);
-                                   return handle_request(req);
-                                 })
-                               | ex::then([&](http1::Response&& rsp) {
-                                   session.response = std::move(rsp);
-                                   auto metrics = send_response(
-                                     session.response, session.socket, server.send_opt);
-                                   server.update_metric(metrics);
-                                 })
-                               | ex::then([&] { return check_keepalive(session.request); })
-                               | ex::repeat_effect_until() //
-                               | ex::then([&]() { update_session(session); })
-                               | ex::upon_error([]<class E>(E&& e) {
-                                   return handle_error(std::forward<E>(e));
-                                 });
+                          return recv_request(session)            //
+                               | ex::let_value([](auto&&...) { return ex::just(); })
+                               // | ex::let_value([&](http1::Request&& req, recv_metric metrics) {
+                               //     session.request = std::move(req);
+                               //     server.update_metric(metrics);
+                               //     return ex::just();
+                               //   }) //
+                               | ex::upon_error([]<class E>(auto&&...) {});
                         });
                })
              | sio::ignore_all();
       },
       server.acceptor);
-    ex::sync_wait(exec::when_any(handles, server.context.run()));
+    // ex::sync_wait(exec::when_any(handles, server.context.run()));
+    ex::sync_wait(std::move(handles));
   }
 
 

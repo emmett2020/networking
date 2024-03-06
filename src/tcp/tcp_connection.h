@@ -47,7 +47,7 @@
 
 namespace net::tcp {
   using namespace std::chrono_literals;
-  using tcp_socket_handle = sio::io_uring::socket_handle<sio::ip::tcp>;
+  using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
   using tcp_acceptor_handle = sio::io_uring::acceptor_handle<sio::ip::tcp>;
   using tcp_acceptor = sio::io_uring::acceptor<sio::ip::tcp>;
 
@@ -91,7 +91,7 @@ namespace net::tcp {
 
 
   struct SocketSendMeta {
-    tcp_socket_handle socket;
+    tcp_socket socket;
     std::string start_line_and_headers;
     http1::Response response;
     std::error_code ec{};
@@ -103,18 +103,30 @@ namespace net::tcp {
     uint64_t total_size = 0;
   };
 
-  struct recv_metric {
+  struct time_metric {
     using duration = std::chrono::seconds;
     using timepoint = std::chrono::time_point<std::chrono::system_clock>;
-    timepoint start_timestamp{};
-    timepoint end_timestamp{};
-    duration io_duration{0};
-    uint64_t total_size{0};
-    uint32_t recv_cnt{0};
+    timepoint connected{};
+    timepoint first{};
+    timepoint last{};
+    duration max{0};
+    duration min{0};
+    duration elapsed{0};
+  };
+
+  struct size_metric {
+    uint64_t total{0};
+    uint32_t count{0};
+  };
+
+  struct recv_metric {
+    time_metric time;
+    size_metric size;
   };
 
   struct send_metric {
-    uint64_t total_size = 0;
+    time_metric time;
+    size_metric size;
   };
 
   // TODO(xiaoming): could get the information from server yaml config.
@@ -130,26 +142,9 @@ namespace net::tcp {
     duration total_timeout{0};
   };
 
-  struct socket_recv_handle {
-    using duration = std::chrono::seconds;
-    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
-
-    tcp_socket_handle socket;
-    std::array<std::byte, 8192> recv_buffer{};
-    std::size_t unparsed_size{0};
-    http1::Request request{};
-    http1::RequestParser parser{&request};
-    std::error_code ec{};
-    std::uint64_t recv_cnt = 0;
-    recv_metric metric{};
-    recv_option opt{};
-    duration remaining_timeout;
-    timepoint start_recv_timepoint;
-  };
-
   // tcp session.
   struct tcp_session {
-    explicit tcp_session(tcp_socket_handle socket)
+    explicit tcp_session(tcp_socket socket)
       : socket(socket)
       , id(make_session_id())
       , context(socket.context_) {
@@ -165,10 +160,20 @@ namespace net::tcp {
 
     exec::io_uring_context* context{nullptr};
     session_id id = 0;
-    tcp_socket_handle socket;
+    tcp_socket socket;
     http1::Request request{};
     http1::Response response{};
     std::size_t reuse_cnt = 0;
+    server_metric metric{};
+  };
+
+  struct recv_state {
+    http1::Request request{};
+    http1::RequestParser parser{&request};
+    std::array<std::byte, 8192> buffer{};
+    uint32_t unparsed_size{0};
+    recv_metric metric{};
+    std::chrono::seconds remaining_time;
   };
 
   // TODO(xiaoming): how to make ipv6?

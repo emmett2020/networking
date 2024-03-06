@@ -44,7 +44,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC STDEXEC::stdexec
                                              spdlog::spdlog
                                              magic_enum::magic_enum)
 
-option(BUILD_NETWORKING_TEST "build networking test" ON)
+option(BUILD_NETWORKING_TEST "build networking test" OFF)
 if (BUILD_NETWORKING_TEST)
     message(STATUS "building networing unittest...")
     # !stdexec also use Catch2

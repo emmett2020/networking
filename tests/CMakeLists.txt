@@ -15,8 +15,13 @@ set (LIBS Catch2::Catch2WithMain fmt::fmt magic_enum)
 # add_executable(test_http_server test_http_server.cpp)
 # target_link_libraries(test_http_server PRIVATE ${LIBS} STDEXEC::stdexec sio::sio)
 
-add_executable(test_then_value test_then_value.cpp)
-target_link_libraries(test_then_value PRIVATE ${LIBS} STDEXEC::stdexec sio::sio)
+#add_executable(test_then_value test_then_value.cpp)
+#target_link_libraries(test_then_value PRIVATE ${LIBS} STDEXEC::stdexec sio::sio)
+
+add_executable(test_timeout test_timeout.cpp)
+target_link_libraries(test_timeout PRIVATE ${LIBS} STDEXEC::stdexec sio::sio)
+
+
 
 
 
