@@ -19,42 +19,21 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
-#include <iostream>
 #include <string>
-#include <unordered_map>
 
-#include <exec/linux/io_uring_context.hpp>
-#include <exec/repeat_effect_until.hpp>
-#include <exec/when_any.hpp>
 #include <sio/io_uring/socket_handle.hpp>
-#include <sio/ip/endpoint.hpp>
 #include <sio/ip/tcp.hpp>
-#include <sio/sequence/ignore_all.hpp>
-#include <sio/sequence/let_value_each.hpp>
-#include <sio/io_concepts.hpp>
-#include <sio/ip/address.hpp>
-#include <stdexec/execution.hpp>
-#include <utility>
 
-#include "exec/timed_scheduler.hpp"
-#include "http1/http_common.h"
-#include "http1/http_error.h"
 #include "http1/http_message_parser.h"
 #include "http1/http_request.h"
 #include "http1/http_response.h"
-#include "utils/if_then_else.h"
-#include "utils/stdexec_util.h"
 
-namespace net::tcp {
-  using namespace std::chrono_literals;
+namespace net::http1 {
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
   using tcp_acceptor_handle = sio::io_uring::acceptor_handle<sio::ip::tcp>;
   using tcp_acceptor = sio::io_uring::acceptor<sio::ip::tcp>;
-
   using const_buffer = std::span<const std::byte>;
-  using mutable_buffer = std::span< std::byte>;
-
-  static constexpr auto unlimited_timeout = std::chrono::seconds::max();
+  using mutable_buffer = std::span<std::byte>;
 
   struct send_state {
     tcp_socket socket;
@@ -62,7 +41,6 @@ namespace net::tcp {
     http1::Response response;
     std::error_code ec{};
     std::uint32_t total_send_size{0};
-    uint32_t send_once_max_wait_time_ms;
   };
 
   // tcp session.
@@ -89,14 +67,6 @@ namespace net::tcp {
     std::size_t reuse_cnt = 0;
   };
 
-  struct recv_state {
-    http1::client_request request{};
-    http1::RequestParser parser{&request};
-    std::array<std::byte, 8192> buffer{};
-    uint32_t unparsed_size{0};
-    std::chrono::seconds remaining_time;
-  };
-
   // TODO(xiaoming): how to make ipv6?
   struct server {
     server(std::string_view addr, uint16_t port) noexcept
@@ -119,4 +89,4 @@ namespace net::tcp {
 
   void start_server(server& server) noexcept;
 
-} // namespace net::tcp
+} // namespace net::http1

@@ -1443,7 +1443,8 @@ namespace net::http1 {
     Message* message_{nullptr};
   };
 
-  using RequestParser = MessageParser<http1::Request>;
+  using RequestParser = MessageParser<http1::client_request>;
+
   using ResponseParser = MessageParser<http1::Response>;
 
 } // namespace net::http1

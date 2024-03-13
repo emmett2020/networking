@@ -16,8 +16,24 @@
 
 #pragma once
 
+// stdexec
 #include <stdexec/execution.hpp>
+
+// exec
 #include <exec/variant_sender.hpp>
+#include <exec/linux/io_uring_context.hpp>
+#include <exec/repeat_effect_until.hpp>
+#include <exec/when_any.hpp>
+#include "exec/timed_scheduler.hpp"
+
+// sio
+#include <sio/io_uring/socket_handle.hpp>
+#include <sio/ip/endpoint.hpp>
+#include <sio/ip/tcp.hpp>
+#include <sio/sequence/ignore_all.hpp>
+#include <sio/sequence/let_value_each.hpp>
+#include <sio/io_concepts.hpp>
+#include <sio/ip/address.hpp>
 
 namespace ex {
   using namespace stdexec; // NOLINT

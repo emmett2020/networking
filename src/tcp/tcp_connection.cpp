@@ -23,7 +23,9 @@
 #include "http1/http_message_parser.h"
 #include "http1/http_request.h"
 #include "http1/http_response.h"
+#include "http1/http_concept.h"
 #include "sio/io_concepts.hpp"
+#include "sio/ip/tcp.hpp"
 #include "stdexec/execution.hpp"
 #include "utils/if_then_else.h"
 #include "utils/timeout.h"
@@ -67,8 +69,15 @@ namespace net::tcp {
   }
 
   ex::sender auto parse_request(recv_state& state) {
-    std::string ss = CopyArray(state.buffer); // DEBUG
-    std::error_code ec{};                     // DEBUG
+    auto copy_array = [](const_buffer buffer) noexcept -> std::string {
+      std::string ss;
+      for (auto b: buffer) {
+        ss.push_back(static_cast<char>(b));
+      }
+      return ss;
+    };
+    std::string ss = copy_array(state.buffer); // DEBUG
+    std::error_code ec{};                      // DEBUG
     std::size_t parsed_size = state.parser.Parse(ss, ec);
     if (ec == http1::Error::kNeedMore) {
       if (parsed_size < state.unparsed_size) {
@@ -96,16 +105,10 @@ namespace net::tcp {
     }
   }
 
-  void update_state(auto start, auto stop, std::size_t recv_size, recv_state& state) noexcept {
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(start - stop);
-    if (state.metric.time.first.time_since_epoch().count() == 0) {
-      state.metric.time.first = start;
-    }
-    state.metric.time.last = stop;
-    state.metric.time.elapsed += elapsed;
-    state.metric.size.total += recv_size;
+  void
+    update_state(std::size_t recv_size, recv_option::duration elapsed, recv_state& state) noexcept {
     state.unparsed_size += recv_size;
-    state.remaining_time -= elapsed;
+    state.remaining_time -= elapsed; // BUGBUG
   }
 
   ex::sender auto check_recv_size(std::size_t recv_size) {
@@ -113,24 +116,26 @@ namespace net::tcp {
       recv_size != 0, ex::just(recv_size), ex::just_error(http1::Error::kEndOfStream));
   }
 
-  // request, metrics
-  ex::sender auto recv_request(const tcp_session& session) noexcept {
-    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
+  template <http1::http_request Request>
+  ex::sender auto recv_request(tcp_socket socket) noexcept {
+    using timepoint = Request::timepoint;
     return ex::just(recv_state{}) //
          | ex::let_value([&](recv_state& state) {
              auto recv_buffer = [&] {
                return std::span{state.buffer}.subspan(state.unparsed_size);
              };
 
-             auto scheduler = session.socket.context_->get_scheduler();
-             initialize_state(state, {});
-             return sio::async::read_some(session.socket, recv_buffer())                       //
+             auto scheduler = socket.context_->get_scheduler();
+             initialize_state(state, Request::socket_option());
+             return sio::async::read_some(socket, recv_buffer())                               //
                   | ex::let_value(check_recv_size)                                             //
                   | ex::timeout(scheduler, state.remaining_time)                               //
                   | ex::let_stopped([] { return ex::just_error(http1::Error::kRecvTimeout); }) //
-                  | ex::let_value([&](timepoint start, timepoint stop, std::size_t recv_size) {
+                  | ex::then([&](timepoint start, timepoint stop, std::size_t recv_size) {
+                      if constexpr (Request::need_update_metric()) {
+                        state.request.update_metric(start, stop, recv_size);
+                      }
                       update_state(start, stop, recv_size, state);
-                      return ex::just();
                     })                                                  //
                   | ex::let_value([&] { return parse_request(state); }) //
                   | ex::repeat_effect_until()                           //
@@ -138,42 +143,38 @@ namespace net::tcp {
            });
   }
 
-  ex::sender auto test_recv_request(const tcp_session& session) noexcept {
-    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
-    ex::sender auto sndr =
-      ex::just(recv_state{}) //
-      | ex::let_value([&](recv_state& state) {
-          auto recv_buffer = [&] {
-            return std::span{state.buffer}.subspan(state.unparsed_size);
-          };
+  // request, metrics
+  // ex::sender auto recv_request(tcp_socket socket) noexcept {
+  //   using timepoint = std::chrono::time_point<std::chrono::system_clock>;
+  //   return ex::just(recv_state{}) //
+  //        | ex::let_value([&](recv_state& state) {
+  //            auto recv_buffer = [&] {
+  //              return std::span{state.buffer}.subspan(state.unparsed_size);
+  //            };
+  //
+  //            auto scheduler = socket.context_->get_scheduler();
+  //            initialize_state(state, {});
+  //            return sio::async::read_some(socket, recv_buffer())                               //
+  //                 | ex::let_value(check_recv_size)                                             //
+  //                 | ex::timeout(scheduler, state.remaining_time)                               //
+  //                 | ex::let_stopped([] { return ex::just_error(http1::Error::kRecvTimeout); }) //
+  //                 | ex::then([&](timepoint start, timepoint stop, std::size_t recv_size) {
+  //                     update_state(start, stop, recv_size, state);
+  //                   })                                                  //
+  //                 | ex::let_value([&] { return parse_request(state); }) //
+  //                 | ex::repeat_effect_until()                           //
+  //                 | ex::let_value([&] { return finished(std::move(state)); });
+  //          });
+  // }
 
-          auto scheduler = session.socket.context_->get_scheduler();
-          initialize_state(state, {});
-          return sio::async::read_some(session.socket, recv_buffer())                       //
-               | ex::let_value(check_recv_size)                                             //
-               | ex::timeout(scheduler, state.remaining_time)                               //
-               | ex::let_stopped([] { return ex::just_error(http1::Error::kRecvTimeout); }) //
-               | ex::let_value([&](timepoint start, timepoint stop, std::size_t recv_size) {
-                   update_state(start, stop, recv_size, state);
-                   return ex::just();
-                 })                                                  //
-               | ex::let_value([&] { return parse_request(state); }) //
-               | ex::repeat_effect_until()                           //
-               | ex::let_value([&] { return finished(std::move(state)); });
-        });
-    sync_wait(std::move(sndr));
-    return sndr;
-  }
-
-  ex::sender auto handle_request(http1::Request& request) noexcept {
+  ex::sender auto handle_request(const http1::client_request& request) noexcept {
     http1::Response response;
-    // make response
     response.status_code = http1::HttpStatusCode::kOK;
-    response.version = std::move(request).version;
+    response.version = request.version;
     return ex::just(response);
   }
 
-  ex::sender auto create_response(SocketSendMeta& meta) {
+  ex::sender auto create_response(send_state& meta) {
     std::optional<std::string> response_str = meta.response.MakeResponseString();
     if (response_str.has_value()) {
       meta.start_line_and_headers = std::move(*response_str);
@@ -184,15 +185,12 @@ namespace net::tcp {
 
   // Update metrics
   // Need templates constexpr to check whether users need metrics.
-  auto update_data(
-    std::size_t send_size,
-    SocketSendMeta& meta,
-    [[maybe_unused]] tcp_session& session) {
+  auto update_data(std::size_t send_size, send_state& meta, [[maybe_unused]] session& session) {
     meta.total_send_size += send_size;
     std::cout << "send bytes: " << meta.total_send_size << "\n";
   }
 
-  bool check_keepalive(const http1::Request& request) noexcept {
+  bool check_keepalive(const http1::client_request& request) noexcept {
     if (request.ContainsHeader(http1::kHttpHeaderConnection)) {
       return true;
     }
@@ -209,15 +207,15 @@ namespace net::tcp {
   //   return std::move(response);
   // }
 
-  tcp_session create_session(tcp_socket socket) {
-    return tcp_session{socket};
+  session create_session(tcp_socket socket) {
+    return session{socket};
   }
 
-  void update_server_metrics(server_metric server, recv_metric r) {
-  }
-
-  void update_server_metrics(server_metric server, send_metric s) {
-  }
+  // void update_server_metrics(server_metric server, recv_metric r) {
+  // }
+  //
+  // void update_server_metrics(server_metric server, send_metric s) {
+  // }
 
   template <class E>
   auto handle_error(E&& e) {
@@ -230,31 +228,30 @@ namespace net::tcp {
     }
   }
 
-  void update_session(tcp_session& session) noexcept {
+  void update_session(session& session) noexcept {
   }
 
-  void start_server(Server& server) noexcept {
+  void start_server(server& server) noexcept {
     auto handles = sio::async::use_resources(
       [&](tcp_acceptor_handle acceptor) noexcept {
         return sio::async::accept(acceptor) //
              | sio::let_value_each([&](tcp_socket socket) {
-                 return ex::just(create_session(socket))          //
-                      | ex::let_value([&](tcp_session& session) { //
-                          return recv_request(session)            //
-                               | ex::let_value([](auto&&...) { return ex::just(); })
-                               // | ex::let_value([&](http1::Request&& req, recv_metric metrics) {
-                               //     session.request = std::move(req);
-                               //     server.update_metric(metrics);
-                               //     return ex::just();
-                               //   }) //
-                               | ex::upon_error([]<class E>(auto&&...) {});
+                 return ex::just(create_session(socket))      //
+                      | ex::let_value([&](session& session) { //
+                          return recv_request(session.socket) //
+                               | ex::let_value(
+                                   [&](http1::client_request& req, recv_metric& metrics) {
+                                     session.request = req;
+                                     server.update_metric(metrics);
+                                     return ex::just();
+                                   }) //
+                               | ex::upon_error([](auto&&...) noexcept {});
                         });
                })
              | sio::ignore_all();
       },
       server.acceptor);
-    // ex::sync_wait(exec::when_any(handles, server.context.run()));
-    ex::sync_wait(std::move(handles));
+    ex::sync_wait(exec::when_any(handles, server.context.run()));
   }
 
 

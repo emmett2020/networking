@@ -26,14 +26,13 @@
 #include <vector>
 
 #include "http1/http_common.h"
+#include "http1/http_metric.h"
+#include "http1/http_option.h"
 
 namespace net::http1 {
-
-  struct Options {
-    uint32_t max_length_of_uri_path = 4096;
-    uint32_t max_length_of_uri_param_name = 1024;
-    uint32_t max_length_of_uri_param_value = 1024;
-    uint32_t max_size_of_uri_params = 1024;
+  enum class message_direction {
+    send,
+    receive,
   };
 
   // A request received from a client.
@@ -51,10 +50,31 @@ namespace net::http1 {
     std::unordered_map<std::string, std::string> params;
 
     uint32_t keep_alive_reuse_count{0};
+    socket_metric metric;
   };
 
+  // A request could be used while client send to server or server send to client.
+  template <message_direction MessageDirection>
   struct Request : public RequestBase {
+    using duration = std::chrono::seconds;
+    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
+    static constexpr auto unlimited_timeout = duration::max();
 
+    static constexpr bool use_for_recv() noexcept {
+      return MessageDirection == message_direction::receive;
+    }
+
+    static constexpr bool use_for_send() noexcept {
+      return MessageDirection == message_direction::send;
+    }
+
+    static constexpr auto socket_option() noexcept {
+      if constexpr (use_for_recv()) {
+        return recv_option{};
+      } else {
+        return send_option{};
+      }
+    }
 
     HttpMethod Method() const noexcept {
       return method;
@@ -142,6 +162,18 @@ namespace net::http1 {
           return ::strcasecmp(p.first.c_str(), header_name.data()) == 0;
         });
     }
+
+    void update_metric(const timepoint& start, const timepoint& stop, std::size_t size) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(start - stop);
+      if (metric.time.first.time_since_epoch().count() == 0) {
+        metric.time.first = start;
+      }
+      metric.time.last = stop;
+      metric.time.elapsed += elapsed;
+      metric.size.total += size;
+    }
   };
 
+  using client_request = Request<message_direction::receive>;
+  using server_request = Request<message_direction::send>;
 } // namespace net::http1
