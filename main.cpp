@@ -25,7 +25,7 @@ using namespace exec;    // NOLINT
 using namespace std;     // NOLINT
 
 int main() {
-  net::tcp::Server server{"127.0.0.1", 1280};
+  net::tcp::server server{"127.0.0.1", 1280};
   net::tcp::start_server(server);
 
   std::cout << "hello world\n";
