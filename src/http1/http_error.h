@@ -191,7 +191,7 @@ namespace net::http1 {
 
   inline std::error_code make_error_code(net::http1::Error err) { // NOLINT
     static net::http1::HttpErrorCategory category{};
-    return {static_cast<std::underlying_type<net::http1::Error>::type>(err), category};
+    return {static_cast<std::underlying_type_t<net::http1::Error>>(err), category};
   }
 
 } // namespace net::http1

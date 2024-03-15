@@ -16,6 +16,8 @@ Checks: '
   -readability-identifier-length,
   -readability-identifier-naming,
 
+  -google-readability-todo,
+
   -misc-non-private-member-variables-in-classes,
 '
 WarningsAsErrors: '*'

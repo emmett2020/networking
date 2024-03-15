@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "http1/http_server.h"
+#pragma once
 
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -28,19 +28,19 @@
 #include <utility>
 #include <iostream>
 
-#include <exec/repeat_effect_until.hpp>
 #include <sio/sequence/ignore_all.hpp>
 #include <sio/io_uring/socket_handle.hpp>
 #include <sio/ip/tcp.hpp>
+#include <exec/linux/io_uring_context.hpp>
+#include <exec/timed_scheduler.hpp>
+#include <exec/repeat_effect_until.hpp>
 
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
 #include "http1/http_common.h"
 #include "http1/http_error.h"
 #include "http1/http_message_parser.h"
-#include "http1/http_request.h"
 #include "http1/http_response.h"
-#include "http1/http_concept.h"
 
 namespace ex {
   using namespace stdexec; // NOLINT
@@ -48,76 +48,25 @@ namespace ex {
 }
 
 namespace net::http1 {
-  using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
-  using tcp_acceptor_handle = sio::io_uring::acceptor_handle<sio::ip::tcp>;
-  using tcp_acceptor = sio::io_uring::acceptor<sio::ip::tcp>;
-  using const_buffer = std::span<const std::byte>;
-  using mutable_buffer = std::span<std::byte>;
-
   struct send_state {
-    tcp_socket socket;
     std::string start_line_and_headers;
     http1::Response response;
     std::error_code ec{};
     std::uint32_t total_send_size{0};
   };
 
-  // tcp session.
-  struct session {
-    explicit session(tcp_socket socket)
-      : socket(socket)
-      , id(make_session_id())
-      , context(socket.context_) {
-    }
-
-    using session_id = int64_t;
-
-    static session_id make_session_id() noexcept {
-      static std::atomic_int64_t session_idx{0};
-      ++session_idx;
-      return session_idx.load();
-    }
-
-    exec::io_uring_context* context{nullptr};
-    session_id id = 0;
-    tcp_socket socket;
-    http1::client_request request{};
-    http1::Response response{};
-    std::size_t reuse_cnt = 0;
-  };
-
-  // TODO(xiaoming): how to make ipv6?
-  struct server {
-    server(std::string_view addr, uint16_t port) noexcept
-      : server(sio::ip::endpoint{sio::ip::make_address_v4(addr), port}) {
-    }
-
-    server(sio::ip::address addr, uint16_t port) noexcept
-      : server(sio::ip::endpoint{addr, port}) {
-    }
-
-    explicit server(sio::ip::endpoint endpoint) noexcept
-      : endpoint{endpoint}
-      , acceptor{&context, sio::ip::tcp::v4(), endpoint} {
-    }
-
-    exec::io_uring_context context{};
-    sio::ip::endpoint endpoint{};
-    tcp_acceptor acceptor;
-  };
-
+  // [cpo][parse_request]
   namespace _parse_request {
-    inline bool check_parse_done(std::error_code ec) {
-      return ec && ec != http1::Error::kNeedMore;
-    }
-
     struct parse_request_t {
-      // Parse a request usually a http client request.
+      using const_buffer = std::span<const std::byte>;
+      using mutable_buffer = std::span<std::byte>;
+
+      // Parse request, usually a http client request.
       template <http_request Request>
       stdexec::sender auto operator()(
         MessageParser<Request>& parser,
         mutable_buffer buffer,
-        std::size_t unparsed_size) const {
+        std::size_t unparsed_size) const noexcept {
         auto copy_array = [](const_buffer buffer) noexcept -> std::string {
           std::string ss;
           for (auto b: buffer) {
@@ -136,8 +85,8 @@ namespace net::http1 {
             // ::memcpy(buffer.begin(), buffer.begin() + parsed_size, unparsed_size);
           }
         }
-        // how to deal with error?
-        return stdexec::just(check_parse_done(ec));
+        // how to deal with parse error?
+        return stdexec::just(ec && ec != http1::Error::kNeedMore);
       }
     };
 
@@ -149,7 +98,7 @@ namespace net::http1 {
     template <http_request Request>
     struct recv_state {
       Request request{};
-      http1::RequestParser parser{&request};
+      MessageParser<Request> parser{&request};
       std::array<std::byte, 8192> buffer{};
       uint32_t unparsed_size{0};
       Request::duration remaining_time{0};
@@ -198,12 +147,19 @@ namespace net::http1 {
         ex::just_error(http1::Error::kEndOfStream));
     }
 
+    // recv_request is an customization point object which we names cpo.
     struct recv_request_t {
-      template <http_request Request>
-      stdexec::sender auto operator()(tcp_socket socket, Request& req) const noexcept {
+      template <http_socket Socket, http_request Request>
+      stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
+        // Type tratis.
         using timepoint = Request::timepoint;
         using recv_state = recv_state<Request>;
+
         auto scheduler = socket.context_->get_scheduler();
+        using timepoint_of_scheduler = exec::time_point_of_t<decltype(scheduler)>;
+        // static_assert(
+        //   std::convertible_to< timepoint_of_scheduler, timepoint>
+        //   && "The timepoint type of request and context is incompatible");
 
         return ex::just(recv_state{.request = req}) //
              | ex::let_value([&](recv_state& state) {
@@ -216,17 +172,17 @@ namespace net::http1 {
                       | ex::let_value(check_recv_size)               //
                       | ex::timeout(scheduler, state.remaining_time) //
                       | ex::let_stopped([&] {
-                          return ex::just_error(detailed_error(state.parser.State()));
-                        }) //
-                      | ex::then([&](timepoint start, timepoint stop, std::size_t recv_size) {
-                          state.request.update_metric(start, stop, recv_size);
-                          update_state(stop - start, recv_size, state);
-                        }) //
+                          auto err = detailed_error(state.parser.State());
+                          return ex::just_error(err);
+                        })
+                      | ex::then([&](auto start, auto stop, std::size_t recv_size) {
+                          // state.request.update_metric(start, stop, recv_size);
+                          // update_state(stop - start, recv_size, state);
+                        })
                       | ex::let_value([&] {
                           return parse_request(state.parser, state.buffer, state.unparsed_size);
-                        })                        //
-                      | ex::repeat_effect_until() //
-                      | ex::then([&] { return std::move(state.request); });
+                        })
+                      | ex::repeat_effect_until();
                });
       }
     };
@@ -266,7 +222,7 @@ namespace net::http1 {
 
   namespace _start_server {
     template <http_request Request>
-    bool check_keepalive(const Request& request) noexcept {
+    bool need_keepalive(const Request& request) noexcept {
       if (request.ContainsHeader(http1::kHttpHeaderConnection)) {
         return true;
       }
@@ -274,10 +230,6 @@ namespace net::http1 {
         return true;
       }
       return false;
-    }
-
-    session create_session(tcp_socket socket) {
-      return session{socket};
     }
 
     template <class E>
@@ -291,17 +243,70 @@ namespace net::http1 {
       }
     }
 
-    void update_session(session& session) noexcept {
-    }
+    // A http session is a conversation between client and server.
+    // We use session id to identify a specific unique conversation.
+    template <class Context, class Socket, class Request>
+    struct session {
+      // Just a simple session id factory which must be replaced in future.
+      using id_type = uint64_t;
+
+      static id_type make_session_id() noexcept {
+        static std::atomic_int64_t session_idx{0};
+        ++session_idx;
+        return session_idx.load();
+      }
+
+      id_type id{make_session_id()};
+      Socket socket{};
+      Request request{};
+      Response response{};
+      std::size_t reuse_cnt{0};
+    };
+
+    // TODO: how to make ipv6?
+    // A http server.
+    struct server {
+      using context_type = ex::io_uring_context;
+      using request_type = client_request;
+      using response_type = Response;
+      using acceptor_handle_type = sio::io_uring::acceptor_handle<sio::ip::tcp>;
+      using acceptor_type = sio::io_uring::acceptor<sio::ip::tcp>;
+      using socket_type = sio::io_uring::socket_handle<sio::ip::tcp>;
+      using session_type = session<context_type, socket_type, request_type>;
+
+      server(std::string_view addr, uint16_t port) noexcept
+        : server(sio::ip::endpoint{sio::ip::make_address_v4(addr), port}) {
+      }
+
+      server(sio::ip::address addr, uint16_t port) noexcept
+        : server(sio::ip::endpoint{addr, port}) {
+      }
+
+      explicit server(sio::ip::endpoint endpoint) noexcept
+        : endpoint{endpoint}
+        , acceptor{&context, sio::ip::tcp::v4(), endpoint} {
+      }
+
+      sio::ip::endpoint endpoint{};
+      context_type context{};
+      acceptor_type acceptor;
+    };
 
     struct start_server_t {
-      void operator()(server& server) const noexcept {
+      template <http_server Server>
+      void operator()(Server& server) const noexcept {
+        // TODO: some checks must be applied here in the future.
+        // e.g. check whether context is able to handle net IO.
+        using session_type = Server::session_type;
+        using socket_type = Server::socket_type;
+        using acceptor_handle_type = Server::acceptor_handle_type;
+
         auto handles = sio::async::use_resources(
-          [&](tcp_acceptor_handle acceptor) noexcept {
+          [&](acceptor_handle_type acceptor) noexcept {
             return sio::async::accept(acceptor) //
-                 | sio::let_value_each([&](tcp_socket socket) {
-                     return ex::just(create_session(socket))                       //
-                          | ex::let_value([&](session& session) {                  //
+                 | sio::let_value_each([&](socket_type socket) {
+                     return ex::just(session_type{.socket = socket})               //
+                          | ex::let_value([&](session_type& session) {             //
                               return recv_request(session.socket, session.request) //
                                    | ex::upon_error([](auto&&...) noexcept {});
                             });
@@ -315,6 +320,7 @@ namespace net::http1 {
   } // namespace _start_server
 
   inline constexpr _start_server::start_server_t start_server{};
+  using _start_server::server;
 
 } // namespace net::http1
 

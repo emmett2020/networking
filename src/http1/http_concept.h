@@ -46,4 +46,10 @@ namespace net::http1 {
 
   template <typename T>
   concept http_message = http_response<T> || http_request<T>;
+
+  template <typename T>
+  concept http_server = true;
+
+  template <typename T>
+  concept http_socket = true;
 }; // namespace net::http1

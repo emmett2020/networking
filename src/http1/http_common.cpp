@@ -16,4 +16,5 @@
 
 #include "http1/http_common.h"
 
-namespace net::http1 {}  // namespace net::http1
+namespace net::http1 {
+} // namespace net::http1
