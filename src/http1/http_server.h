@@ -37,6 +37,7 @@
 
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
+#include "utils/flat_buffer.h"
 #include "http1/http_common.h"
 #include "http1/http_error.h"
 #include "http1/http_message_parser.h"
@@ -55,52 +56,12 @@ namespace net::http1 {
     std::uint32_t total_send_size{0};
   };
 
-  // [cpo][parse_request]
-  namespace _parse_request {
-    struct parse_request_t {
-      using const_buffer = std::span<const std::byte>;
-      using mutable_buffer = std::span<std::byte>;
-
-      // Parse request, usually a http client request.
-      template <http_request Request>
-      stdexec::sender auto operator()(
-        MessageParser<Request>& parser,
-        mutable_buffer buffer,
-        std::size_t unparsed_size) const noexcept {
-        auto copy_array = [](const_buffer buffer) noexcept -> std::string {
-          std::string ss;
-          for (auto b: buffer) {
-            ss.push_back(static_cast<char>(b));
-          }
-          return ss;
-        };
-        std::string ss = copy_array(buffer); // DEBUG
-        std::error_code ec{};                // DEBUG
-        std::size_t parsed_size = parser.Parse(ss, ec);
-        if (ec == http1::Error::kNeedMore) {
-          if (parsed_size < unparsed_size) {
-            // WARN: This isn't efficient, a new way is needed.
-            //       Move unparsed data to the front of buffer.
-            unparsed_size -= parsed_size;
-            // ::memcpy(buffer.begin(), buffer.begin() + parsed_size, unparsed_size);
-          }
-        }
-        // how to deal with parse error?
-        return stdexec::just(ec && ec != http1::Error::kNeedMore);
-      }
-    };
-
-  } // namespace _parse_request
-
-  inline constexpr _parse_request::parse_request_t parse_request{};
-
   namespace _recv_request {
     template <http_request Request>
     struct recv_state {
       Request request{};
       MessageParser<Request> parser{&request};
-      std::array<std::byte, 8192> buffer{};
-      uint32_t unparsed_size{0};
+      util::flat_buffer<8192> buffer{};
       Request::duration remaining_time{0};
     };
 
@@ -117,7 +78,6 @@ namespace net::http1 {
 
     template <class Request>
     void update_state(auto elapsed, std::size_t recv_size, recv_state<Request>& state) noexcept {
-      state.unparsed_size += recv_size;
       (void) elapsed;
       // state.remaining_time -= elapsed.count(); // BUGBUG
     }
@@ -149,7 +109,7 @@ namespace net::http1 {
 
     // recv_request is an customization point object which we names cpo.
     struct recv_request_t {
-      template <http_socket Socket, http_request Request>
+      template <http1_socket Socket, http_request Request>
       stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
         // Type tratis.
         using timepoint = Request::timepoint;
@@ -157,30 +117,35 @@ namespace net::http1 {
 
         auto scheduler = socket.context_->get_scheduler();
         using timepoint_of_scheduler = exec::time_point_of_t<decltype(scheduler)>;
-        // static_assert(
-        //   std::convertible_to< timepoint_of_scheduler, timepoint>
-        //   && "The timepoint type of request and context is incompatible");
 
         return ex::just(recv_state{.request = req}) //
              | ex::let_value([&](recv_state& state) {
-                 auto recv_buffer = [&] {
-                   return std::span{state.buffer}.subspan(state.unparsed_size);
-                 };
-
                  initialize_state(state);
-                 return sio::async::read_some(socket, recv_buffer()) //
-                      | ex::let_value(check_recv_size)               //
-                      | ex::timeout(scheduler, state.remaining_time) //
+                 return sio::async::read_some(socket, state.buffer.writable_buffer()) //
+                      | ex::let_value(check_recv_size)                                //
+                      | ex::timeout(scheduler, state.remaining_time)                  //
                       | ex::let_stopped([&] {
                           auto err = detailed_error(state.parser.State());
                           return ex::just_error(err);
                         })
                       | ex::then([&](auto start, auto stop, std::size_t recv_size) {
-                          // state.request.update_metric(start, stop, recv_size);
-                          // update_state(stop - start, recv_size, state);
+                          state.buffer.commit(recv_size);
+                          state.request.update_metric(start, stop, recv_size);
+                          update_state(stop - start, recv_size, state);
                         })
                       | ex::let_value([&] {
-                          return parse_request(state.parser, state.buffer, state.unparsed_size);
+                          std::error_code ec{};
+                          std::size_t parsed_size = state.parser.Parse(state.buffer.data(), ec);
+                          if (ec) {
+                            if (ec == http1::Error::kNeedMore) {
+                              state.buffer.consume(parsed_size);
+                              state.buffer.prepare();
+                              return ex::just(false);
+                            }
+                            return ex::just_error(ec && ec != http1::Error::kNeedMore);
+                          }
+                          // parse done
+                          return ex::just(true);
                         })
                       | ex::repeat_effect_until();
                });

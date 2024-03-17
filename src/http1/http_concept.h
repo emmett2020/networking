@@ -51,5 +51,8 @@ namespace net::http1 {
   concept http_server = true;
 
   template <typename T>
-  concept http_socket = true;
+  concept http1_socket = true;
+
+  template <typename T>
+  concept socket_buffer = true;
 }; // namespace net::http1
