@@ -20,7 +20,7 @@
 
 namespace net::http1 {
   template <typename T>
-  concept http_response = requires(T& t) {
+  concept http1_response = requires(T& t) {
     { t.version } -> std::convertible_to<HttpVersion>;
     { t.status_code } -> std::convertible_to<HttpStatusCode>;
     { t.reason } -> std::convertible_to<std::string>;
@@ -30,7 +30,7 @@ namespace net::http1 {
   };
 
   template <typename T>
-  concept http_request = requires(T& t) {
+  concept http1_request = requires(T& t) {
     { t.method } -> std::convertible_to<HttpMethod>;
     { t.scheme } -> std::convertible_to<HttpScheme>;
     { t.version } -> std::convertible_to<HttpVersion>;
@@ -45,10 +45,10 @@ namespace net::http1 {
   };
 
   template <typename T>
-  concept http_message = http_response<T> || http_request<T>;
+  concept http1_message = http1_response<T> || http1_request<T>;
 
   template <typename T>
-  concept http_server = true;
+  concept http1_server = true;
 
   template <typename T>
   concept http1_socket = true;

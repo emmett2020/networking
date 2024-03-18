@@ -20,7 +20,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-#include <array>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <exception>
@@ -57,7 +57,7 @@ namespace net::http1 {
   };
 
   namespace _recv_request {
-    template <http_request Request>
+    template <http1_request Request>
     struct recv_state {
       Request request{};
       MessageParser<Request> parser{&request};
@@ -74,12 +74,6 @@ namespace net::http1 {
       } else {
         state.remaining_time = opt.total_timeout;
       }
-    }
-
-    template <class Request>
-    void update_state(auto elapsed, std::size_t recv_size, recv_state<Request>& state) noexcept {
-      (void) elapsed;
-      // state.remaining_time -= elapsed.count(); // BUGBUG
     }
 
     // Get detailed error enum by message parser state.
@@ -100,53 +94,62 @@ namespace net::http1 {
       }
     }
 
-    inline ex::sender auto check_recv_size(std::size_t recv_size) {
-      return ex::if_then_else(
-        recv_size != 0, //
-        ex::just(recv_size),
-        ex::just_error(http1::Error::kEndOfStream));
-    }
-
     // recv_request is an customization point object which we names cpo.
     struct recv_request_t {
-      template <http1_socket Socket, http_request Request>
+      template <http1_socket Socket, http1_request Request>
       stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
         // Type tratis.
         using timepoint = Request::timepoint;
         using recv_state = recv_state<Request>;
 
-        auto scheduler = socket.context_->get_scheduler();
-        using timepoint_of_scheduler = exec::time_point_of_t<decltype(scheduler)>;
-
         return ex::just(recv_state{.request = req}) //
              | ex::let_value([&](recv_state& state) {
+                 // Check the transferred bytes size. If it's zero,
+                 // then error::end_of_stream will be sent to downstream receiver.
+                 auto check_received_size = [](std::size_t sz) noexcept {
+                   return ex::if_then_else(
+                     sz != 0, //
+                     ex::just(sz),
+                     ex::just_error(http1::Error::end_of_stream));
+                 };
+
+                 // Update necessary information once receive operation completed.
+                 auto update_state = [&state](auto start, auto stop, std::size_t recv_size) {
+                   state.buffer.commit(recv_size);
+                   state.request.update_metric(start, stop, recv_size);
+                   state.remaining_time -=
+                     std::chrono::duration_cast<std::chrono::seconds>(start - stop).count();
+                 };
+
+                 // Sent error to downstream receiver if receive operation timeout.
+                 auto handle_receive_timeout = [&state] noexcept {
+                   auto err = detailed_error(state.parser.State());
+                   return ex::just_error(err);
+                 };
+
+                 // Parse HTTP1 request uses receive buffer.
+                 auto parse_request = [&state] {
+                   std::error_code ec{};
+                   std::size_t parsed_size = state.parser.Parse(state.buffer.data(), ec);
+                   if (ec) {
+                     if (ec == http1::Error::kNeedMore) {
+                       state.buffer.consume(parsed_size);
+                       state.buffer.prepare();
+                       return ex::just(false);
+                     }
+                     return ex::just_error(ec);
+                   }
+                   return ex::just(true);
+                 };
+
+                 auto scheduler = socket.context_->get_scheduler();
                  initialize_state(state);
-                 return sio::async::read_some(socket, state.buffer.writable_buffer()) //
-                      | ex::let_value(check_recv_size)                                //
-                      | ex::timeout(scheduler, state.remaining_time)                  //
-                      | ex::let_stopped([&] {
-                          auto err = detailed_error(state.parser.State());
-                          return ex::just_error(err);
-                        })
-                      | ex::then([&](auto start, auto stop, std::size_t recv_size) {
-                          state.buffer.commit(recv_size);
-                          state.request.update_metric(start, stop, recv_size);
-                          update_state(stop - start, recv_size, state);
-                        })
-                      | ex::let_value([&] {
-                          std::error_code ec{};
-                          std::size_t parsed_size = state.parser.Parse(state.buffer.data(), ec);
-                          if (ec) {
-                            if (ec == http1::Error::kNeedMore) {
-                              state.buffer.consume(parsed_size);
-                              state.buffer.prepare();
-                              return ex::just(false);
-                            }
-                            return ex::just_error(ec && ec != http1::Error::kNeedMore);
-                          }
-                          // parse done
-                          return ex::just(true);
-                        })
+                 return sio::async::read_some(socket, state.buffer.wbuffer()) //
+                      | ex::let_value(check_received_size)                    //
+                      | ex::timeout(scheduler, state.remaining_time)          //
+                      | ex::let_stopped(handle_receive_timeout)               //
+                      | ex::then(update_state)                                //
+                      | ex::let_value(parse_request)                          //
                       | ex::repeat_effect_until();
                });
       }
@@ -186,7 +189,7 @@ namespace net::http1 {
   inline constexpr _create_response::create_response_t create_response{};
 
   namespace _start_server {
-    template <http_request Request>
+    template <http1_request Request>
     bool need_keepalive(const Request& request) noexcept {
       if (request.ContainsHeader(http1::kHttpHeaderConnection)) {
         return true;
@@ -258,7 +261,7 @@ namespace net::http1 {
     };
 
     struct start_server_t {
-      template <http_server Server>
+      template <http1_server Server>
       void operator()(Server& server) const noexcept {
         // TODO: some checks must be applied here in the future.
         // e.g. check whether context is able to handle net IO.

@@ -316,7 +316,7 @@ namespace net::http1 {
  * @see whatwg URL specification: https://url.spec.whatwg.org/#urls
  */
 
-  template <http_message Message>
+  template <http1_message Message>
   class MessageParser {
    public:
     enum class MessageState {
@@ -365,7 +365,7 @@ namespace net::http1 {
         switch (message_state_) {
         case MessageState::kNothingYet:
         case MessageState::kStartLine: {
-          if constexpr (http_request<Message>) {
+          if constexpr (http1_request<Message>) {
             ParseRequestLine(arg, ec);
           } else {
             ParseStatusLine(arg, ec);
@@ -490,7 +490,7 @@ namespace net::http1 {
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-method
    */
     void ParseMethod(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* method_beg = arg.buffer_beg + arg.parsed_len;
       for (const char* p = method_beg; p < arg.buffer_end; ++p) {
         // Collect method string until met first non-method charater.
@@ -530,7 +530,7 @@ namespace net::http1 {
    * allowd between method and URI.
    */
     void ParseSpacesBeforeUri(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* spaces_beg = arg.buffer_beg + arg.parsed_len;
       const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
       if (p == arg.buffer_end) [[unlikely]] {
@@ -555,7 +555,7 @@ namespace net::http1 {
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-target
    */
     void ParseUri(Argument& arg, error_code& ec) noexcept {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* uri_beg = arg.buffer_beg + arg.parsed_len;
       if (uri_beg >= arg.buffer_end) {
         ec = Error::kNeedMore;
@@ -618,7 +618,7 @@ namespace net::http1 {
    * @see https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
    */
     void ParseScheme(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* uri_beg = arg.buffer_beg + arg.parsed_len;
       const char* scheme_beg = uri_beg + inner_parsed_len_;
       for (const char* p = scheme_beg; p < arg.buffer_end; ++p) {
@@ -673,7 +673,7 @@ namespace net::http1 {
    * https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
    */
     void ParseHost(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* uri_beg = arg.buffer_beg + arg.parsed_len;
       const char* host_beg = uri_beg + inner_parsed_len_;
       for (const char* p = host_beg; p < arg.buffer_end; ++p) {
@@ -744,7 +744,7 @@ namespace net::http1 {
    * https://datatracker.ietf.org/doc/html/rfc9110#name-authoritative-access
    */
     void ParsePort(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       uint16_t acc = 0;
       uint16_t cur = 0;
 
@@ -806,7 +806,7 @@ namespace net::http1 {
    * string. If no error occurs, the inner request's path field will be filled.
    */
     void ParsePath(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* const uri_beg = arg.buffer_beg + arg.parsed_len;
       const char* path_beg = uri_beg + inner_parsed_len_;
       for (const char* p = path_beg; p < arg.buffer_end; ++p) {
@@ -841,7 +841,7 @@ namespace net::http1 {
    * do when there is a repeated key, we just use the last-occur policy now.
    */
     void ParseParamName(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* uri_beg = arg.buffer_beg + arg.parsed_len;
       const char* name_beg = uri_beg + inner_parsed_len_;
       for (const char* p = name_beg; p < arg.buffer_end; ++p) {
@@ -898,7 +898,7 @@ namespace net::http1 {
    *                               ; optional whitespace
    */
     void ParseParamValue(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* uri_beg = arg.buffer_beg + arg.parsed_len;
       const char* value_beg = uri_beg + inner_parsed_len_;
       for (const char* p = value_beg; p < arg.buffer_end; ++p) {
@@ -937,7 +937,7 @@ namespace net::http1 {
    *           https://url.spec.whatwg.org/#query-state
    */
     void ParseParams(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       param_state_ = ParamState::kName;
       while (!ec) {
         switch (param_state_) {
@@ -965,7 +965,7 @@ namespace net::http1 {
    * allowd between uri and http version.
    */
     void ParseSpacesBeforeVersion(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* spaces_beg = arg.buffer_beg + arg.parsed_len;
       const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
       if (p == arg.buffer_end) [[unlikely]] {
@@ -992,7 +992,7 @@ namespace net::http1 {
    * @see https://datatracker.ietf.org/doc/html/rfc9112#name-http-version
    */
     void ParseRequestHttpVersion(Argument& arg, error_code& ec) {
-      static_assert(http_request<Message>);
+      static_assert(http1_request<Message>);
       const char* version_beg = arg.buffer_beg + arg.parsed_len;
       if (arg.buffer_end - version_beg < 10) {
         ec = Error::kNeedMore;
@@ -1055,7 +1055,7 @@ namespace net::http1 {
    * this function needs SP to indicate version is received completed.
    */
     void ParseRsponseHttpVersion(Argument& arg, error_code& ec) {
-      static_assert(http_response<Message>);
+      static_assert(http1_response<Message>);
       const char* version_beg = arg.buffer_beg + arg.parsed_len;
       // HTTP-name + SP
       if (arg.buffer_end - version_beg < 9) {
@@ -1091,7 +1091,7 @@ namespace net::http1 {
    * request.
    */
     void ParseStatusCode(Argument& arg, error_code& ec) {
-      static_assert(http_response<Message>);
+      static_assert(http1_response<Message>);
       const char* status_code_beg = arg.buffer_beg + arg.parsed_len;
       // 3DIGIT + SP
       if (arg.buffer_end - status_code_beg < 3 + 1) {
@@ -1123,7 +1123,7 @@ namespace net::http1 {
    * frequently used with interactive text clients.
    */
     void ParseReason(Argument& arg, error_code& ec) {
-      static_assert(http_response<Message>);
+      static_assert(http1_response<Message>);
       const char* reason_beg = arg.buffer_beg + arg.parsed_len;
       for (const char* p = reason_beg; p < arg.buffer_end; ++p) {
         if (*p != '\r') {

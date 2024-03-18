@@ -22,7 +22,7 @@ namespace net::http1 {
   // Error codes returned from HTTP algorithms and operations.
   enum class Error {
     kSuccess = 0,
-    kEndOfStream,
+    end_of_stream,
     kPartialMessage,
     kNeedMore,
     kUnexpectedBody,
@@ -79,7 +79,7 @@ namespace net::http1 {
 
     [[nodiscard]] std::string message(int err) const override {
       switch (static_cast<Error>(err)) {
-      case Error::kEndOfStream:
+      case Error::end_of_stream:
         return "end of stream";
       case Error::kPartialMessage:
         return "partial message";

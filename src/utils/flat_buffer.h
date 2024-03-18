@@ -61,7 +61,7 @@ namespace net::util {
     }
 
     // Return a constant buffer sequence representing the readable bytes.
-    [[nodiscard]] std::span<std::byte> data() const noexcept {
+    [[nodiscard]] std::span<std::byte> rbuffer() const noexcept {
       return std::span(data_).subspan(read_, readable_size());
     }
 
@@ -84,7 +84,7 @@ namespace net::util {
     }
 
     // Return a mutable buffer sequence representing writable bytes.
-    std::span<std::byte> writable_buffer() noexcept {
+    std::span<std::byte> wbuffer() noexcept {
       return std::span(data_).subspan(write_, writable_size());
     }
 
