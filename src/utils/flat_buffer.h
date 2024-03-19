@@ -61,7 +61,7 @@ namespace net::util {
     }
 
     // Return a constant buffer sequence representing the readable bytes.
-    [[nodiscard]] std::span<std::byte> rbuffer() const noexcept {
+    [[nodiscard]] std::span<const std::byte> rbuffer() const noexcept {
       return std::span(data_).subspan(read_, readable_size());
     }
 
@@ -77,7 +77,7 @@ namespace net::util {
         throw std::length_error{"buffer overflow"};
       }
       if (rsize > 0) [[likely]] {
-        std::memmove(0, read_, rsize);
+        std::memmove(0, data_.data() + read_, rsize);
       }
       read_ = 0;
       write_ = read_ + rsize;

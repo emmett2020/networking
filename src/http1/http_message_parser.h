@@ -317,18 +317,18 @@ namespace net::http1 {
  */
 
   template <http1_message Message>
-  class MessageParser {
+  class message_parser {
    public:
-    enum class MessageState {
-      kNothingYet,
-      kStartLine,
-      kExpectingNewline,
-      kHeader,
-      kBody,
-      kCompleted
+    enum class state {
+      nothing_yet,
+      start_line,
+      expecting_newline,
+      header,
+      body,
+      completed
     };
 
-    explicit MessageParser(Message* message) noexcept
+    explicit message_parser(Message* message) noexcept
       : message_(message) {
       name_.reserve(8192);
     }
@@ -339,7 +339,7 @@ namespace net::http1 {
     }
 
     void Reset() noexcept {
-      message_state_ = MessageState::kNothingYet;
+      message_state_ = state::nothing_yet;
       header_state_ = HeaderState::kName;
       uri_state_ = UriState::kInitial;
       param_state_ = ParamState::kName;
@@ -352,19 +352,21 @@ namespace net::http1 {
     }
 
     // TODO(xiaoming): we need span<byte>
-    std::size_t Parse(std::span<char> buffer, error_code& ec) {
+    std::size_t parse(std::span<const std::byte> buffer, error_code& ec) {
       assert(!ec &&
            "net::http1::MessageParser::parse() failed. The parameter ec should "
            "be clear.");
+      // const std::byte* buffer_end = buffer.data() + buffer.size();
+      // BUGBUG
       Argument arg{
-        .buffer_beg = buffer.data(),
-        .buffer_end = buffer.data() + buffer.size(),
+        .buffer_beg = reinterpret_cast<const char*>(buffer.data()),
+        // .buffer_end = reinterpre_cast<const char*>(buffer_end),
         .parsed_len = 0,
       };
       while (!ec) {
         switch (message_state_) {
-        case MessageState::kNothingYet:
-        case MessageState::kStartLine: {
+        case state::nothing_yet:
+        case state::start_line: {
           if constexpr (http1_request<Message>) {
             ParseRequestLine(arg, ec);
           } else {
@@ -372,28 +374,28 @@ namespace net::http1 {
           }
           break;
         }
-        case MessageState::kExpectingNewline: {
+        case state::expecting_newline: {
           ParseExpectingNewLine(arg, ec);
           break;
         }
-        case MessageState::kHeader: {
+        case state::header: {
           ParseHeader(arg, ec);
           break;
         }
-        case MessageState::kBody: {
+        case state::body: {
           ParseBody(arg, ec);
           break;
         }
-        case MessageState::kCompleted: {
+        case state::completed: {
           return arg.parsed_len;
         }
         }
       }
       // If fatal error occurs, return zero as parsed size.
-      return ec == Error::kNeedMore ? arg.parsed_len : 0;
+      return ec == error::need_more ? arg.parsed_len : 0;
     }
 
-    [[nodiscard]] MessageState State() const noexcept {
+    [[nodiscard]] state State() const noexcept {
       return message_state_;
     }
 
@@ -500,19 +502,19 @@ namespace net::http1 {
 
         // The first character after method string must be whitespace.
         if (*p != ' ') {
-          ec = Error::kBadMethod;
+          ec = error::kBadMethod;
           return;
         }
 
         // Empty method is not allowed.
         if (p == method_beg) {
-          ec = Error::kEmptyMethod;
+          ec = error::kEmptyMethod;
           return;
         }
 
         message_->method = detail::ToHttpMethod(method_beg, p);
         if (message_->method == HttpMethod::kUnknown) {
-          ec = Error::kBadMethod;
+          ec = error::kBadMethod;
           return;
         }
 
@@ -520,7 +522,7 @@ namespace net::http1 {
         request_line_state_ = RequestLineState::kSpacesBeforeUri;
         return;
       }
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -534,7 +536,7 @@ namespace net::http1 {
       const char* spaces_beg = arg.buffer_beg + arg.parsed_len;
       const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
       if (p == arg.buffer_end) [[unlikely]] {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       arg.parsed_len += p - spaces_beg;
@@ -558,7 +560,7 @@ namespace net::http1 {
       static_assert(http1_request<Message>);
       const char* uri_beg = arg.buffer_beg + arg.parsed_len;
       if (uri_beg >= arg.buffer_end) {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
 
@@ -632,13 +634,13 @@ namespace net::http1 {
 
         // Need more data.
         if (arg.buffer_end - p < 2) {
-          ec = Error::kNeedMore;
+          ec = error::need_more;
           return;
         }
 
         // The characters next to the first non-scheme character must be "://".
         if (*p != ':' || *(p + 1) != '/' || *(p + 2) != '/') {
-          ec = Error::kBadScheme;
+          ec = error::kBadScheme;
           return;
         }
 
@@ -655,7 +657,7 @@ namespace net::http1 {
         uri_state_ = UriState::kHost;
         return;
       }
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -687,7 +689,7 @@ namespace net::http1 {
 
         // The charater after host must be follows.
         if (*p != ':' && *p != '/' && *p != '?' && *p != ' ') {
-          ec = Error::kBadHost;
+          ec = error::kBadHost;
           return;
         }
 
@@ -695,7 +697,7 @@ namespace net::http1 {
         if (
           p == host_beg
           && (message_->scheme == HttpScheme::kHttp || message_->scheme == HttpScheme::kHttps)) {
-          ec = Error::kBadHost;
+          ec = error::kBadHost;
           return;
         }
 
@@ -726,7 +728,7 @@ namespace net::http1 {
           return;
         }
       }
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -756,7 +758,7 @@ namespace net::http1 {
         if (*p >= '0' && *p <= '9') [[likely]] {
           cur = *p - '0';
           if (acc * 10 + cur > std::numeric_limits<uint16_t>::max()) {
-            ec = Error::kBadPort;
+            ec = error::kBadPort;
             return;
           }
           acc = acc * 10 + cur;
@@ -765,7 +767,7 @@ namespace net::http1 {
 
         // The first character next to port string should be one of follows.
         if (*p != '/' && *p != '?' && *p != ' ') {
-          ec = Error::kBadPort;
+          ec = error::kBadPort;
           return;
         }
 
@@ -793,7 +795,7 @@ namespace net::http1 {
         }
         } // switch
       }   // for
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -823,11 +825,11 @@ namespace net::http1 {
           return;
         }
         if (!detail::IsPathChar(*p)) {
-          ec = Error::kBadPath;
+          ec = error::kBadPath;
           return;
         }
       } // for
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -882,11 +884,11 @@ namespace net::http1 {
         }
 
         if (!detail::IsPathChar(*p)) {
-          ec = Error::kBadParams;
+          ec = error::kBadParams;
           return;
         }
       }
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -915,11 +917,11 @@ namespace net::http1 {
           return;
         }
         if (!detail::IsPathChar(*p)) {
-          ec = Error::kBadParams;
+          ec = error::kBadParams;
           return;
         }
       }
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -969,7 +971,7 @@ namespace net::http1 {
       const char* spaces_beg = arg.buffer_beg + arg.parsed_len;
       const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
       if (p == arg.buffer_end) [[unlikely]] {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       arg.parsed_len += p - spaces_beg;
@@ -995,7 +997,7 @@ namespace net::http1 {
       static_assert(http1_request<Message>);
       const char* version_beg = arg.buffer_beg + arg.parsed_len;
       if (arg.buffer_end - version_beg < 10) {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       if (
@@ -1009,13 +1011,13 @@ namespace net::http1 {
         std::isdigit(version_beg[7]) == 0 || //
         version_beg[8] != '\r' ||            //
         version_beg[9] != '\n') {
-        ec = Error::kBadVersion;
+        ec = error::kBadVersion;
         return;
       }
 
       message_->version = ToHttpVersion(version_beg[5] - '0', version_beg[7] - '0');
       arg.parsed_len += 10;
-      message_state_ = MessageState::kExpectingNewline;
+      message_state_ = state::expecting_newline;
     }
 
     /*
@@ -1059,7 +1061,7 @@ namespace net::http1 {
       const char* version_beg = arg.buffer_beg + arg.parsed_len;
       // HTTP-name + SP
       if (arg.buffer_end - version_beg < 9) {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       if (
@@ -1072,7 +1074,7 @@ namespace net::http1 {
         version_beg[6] != '.' ||             //
         std::isdigit(version_beg[7]) == 0 || //
         version_beg[8] != ' ') {
-        ec = Error::kBadVersion;
+        ec = error::kBadVersion;
         return;
       }
 
@@ -1095,16 +1097,16 @@ namespace net::http1 {
       const char* status_code_beg = arg.buffer_beg + arg.parsed_len;
       // 3DIGIT + SP
       if (arg.buffer_end - status_code_beg < 3 + 1) {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       if (status_code_beg[3] != ' ') {
-        ec = Error::kBadStatus;
+        ec = error::kBadStatus;
         return;
       }
       message_->status_code = ToHttpStatusCode({status_code_beg, 3});
       if (message_->status_code == HttpStatusCode::kUnknown) {
-        ec = Error::kBadStatus;
+        ec = error::kBadStatus;
         return;
       }
       arg.parsed_len += 4;
@@ -1130,16 +1132,16 @@ namespace net::http1 {
           continue;
         }
         if (*(p + 1) != '\n') {
-          ec = Error::kBadLineEnding;
+          ec = error::kBadLineEnding;
           return;
         }
         message_->reason = {reason_beg, p};
         // Skip the "\r\n"
         arg.parsed_len += p - reason_beg + 2;
-        message_state_ = MessageState::kExpectingNewline;
+        message_state_ = state::expecting_newline;
         return;
       }
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -1152,15 +1154,15 @@ namespace net::http1 {
     void ParseExpectingNewLine(Argument& arg, error_code& ec) {
       const char* line_beg = arg.buffer_beg + arg.parsed_len;
       if (arg.buffer_end - line_beg < 2) {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       if (*line_beg == '\r' && *(line_beg + 1) == '\n') {
-        message_state_ = MessageState::kBody;
+        message_state_ = state::body;
         arg.parsed_len += 2;
         return;
       }
-      message_state_ = MessageState::kHeader;
+      message_state_ = state::header;
     }
 
     /*
@@ -1184,7 +1186,7 @@ namespace net::http1 {
       for (const char* p = name_beg; p < arg.buffer_end; ++p) {
         if (*p == ':') {
           if (p == name_beg) [[unlikely]] {
-            ec = Error::kEmptyHeaderName;
+            ec = error::kEmptyHeaderName;
             return;
           }
 
@@ -1199,11 +1201,11 @@ namespace net::http1 {
           return;
         }
         if (!detail::IsToken(*p)) {
-          ec = Error::kBadHeaderName;
+          ec = error::kBadHeaderName;
           return;
         }
       }
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -1249,7 +1251,7 @@ namespace net::http1 {
 
         // Empty header value.
         if (whitespace == value_beg - 1) {
-          ec = Error::kEmptyHeaderValue;
+          ec = error::kEmptyHeaderValue;
           return;
         }
 
@@ -1265,7 +1267,7 @@ namespace net::http1 {
         header_state_ = HeaderState::kHeaderLineEnding;
         return;
       }
-      ec = Error::kNeedMore;
+      ec = error::need_more;
     }
 
     /*
@@ -1277,7 +1279,7 @@ namespace net::http1 {
       const char* spaces_beg = arg.buffer_beg + arg.parsed_len + inner_parsed_len_;
       const char* p = detail::TrimFront(spaces_beg, arg.buffer_end);
       if (p == arg.buffer_end) {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       inner_parsed_len_ += p - spaces_beg;
@@ -1294,11 +1296,11 @@ namespace net::http1 {
     void ParseHeaderLineEnding(Argument& arg, error_code& ec) {
       const char* line_ending_beg = arg.buffer_beg + arg.parsed_len + inner_parsed_len_;
       if (arg.buffer_end - line_ending_beg < 2) {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       if (*line_ending_beg != '\r' || *(line_ending_beg + 1) != '\n') {
-        ec = Error::kBadLineEnding;
+        ec = error::kBadLineEnding;
         return;
       }
 
@@ -1312,7 +1314,7 @@ namespace net::http1 {
       name_.clear();
       inner_parsed_len_ = 0;
       header_state_ = HeaderState::kName;
-      message_state_ = MessageState::kExpectingNewline;
+      message_state_ = state::expecting_newline;
     }
 
     // Note that header name must be lowecase.
@@ -1340,7 +1342,7 @@ namespace net::http1 {
       if (res == std::errc()) {
         message_->content_length = length;
       } else {
-        ec = Error::kBadContentLength;
+        ec = error::kBadContentLength;
       }
     }
 
@@ -1403,22 +1405,22 @@ namespace net::http1 {
     //  WARN: Currently this library only deal with Content-Length case.
     void ParseBody(Argument& arg, error_code& ec) {
       if (message_->content_length == 0) {
-        message_state_ = MessageState::kCompleted;
+        message_state_ = state::completed;
         return;
       }
       const char* body_beg = arg.buffer_beg + arg.parsed_len;
       if (arg.buffer_end - body_beg < message_->content_length) {
-        ec = Error::kNeedMore;
+        ec = error::need_more;
         return;
       }
       message_->body.reserve(message_->content_length);
       message_->body = {body_beg, body_beg + message_->content_length};
       arg.parsed_len += message_->content_length;
-      message_state_ = MessageState::kCompleted;
+      message_state_ = state::completed;
     }
 
     // States.
-    MessageState message_state_{MessageState::kNothingYet};
+    state message_state_{state::nothing_yet};
     RequestLineState request_line_state_{RequestLineState::kMethod};
     StatusLineState status_line_state_{StatusLineState::kVersion};
     UriState uri_state_{UriState::kInitial};
@@ -1443,8 +1445,8 @@ namespace net::http1 {
     Message* message_{nullptr};
   };
 
-  using RequestParser = MessageParser<http1::client_request>;
+  using RequestParser = message_parser<http1::client_request>;
 
-  using ResponseParser = MessageParser<http1::Response>;
+  using ResponseParser = message_parser<http1::Response>;
 
 } // namespace net::http1

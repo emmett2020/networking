@@ -20,11 +20,11 @@
 
 namespace net::http1 {
   // Error codes returned from HTTP algorithms and operations.
-  enum class Error {
-    kSuccess = 0,
+  enum class error {
+    success = 0,
     end_of_stream,
     kPartialMessage,
-    kNeedMore,
+    need_more,
     kUnexpectedBody,
     kNeedBuffer,
     kEndOfChunk,
@@ -59,10 +59,10 @@ namespace net::http1 {
     kShortRead,
     kInvalidResponse,
     kRecvTimeout,
-    kRecvRequestTimeoutWithNothing,
-    kRecvRequestLineTimeout,
-    kRecvRequestHeadersTimeout,
-    kRecvRequestBodyTimeout,
+    recv_request_timeout_with_nothing,
+    recv_request_line_timeout,
+    recv_request_headers_timeout,
+    recv_request_body_timeout,
     kSendTimeout,
     kSendResponseTimeoutWithNothing,
     kSendResponseLineAndHeadersTimeout,
@@ -78,96 +78,96 @@ namespace net::http1 {
     HttpErrorCategory() = default;
 
     [[nodiscard]] std::string message(int err) const override {
-      switch (static_cast<Error>(err)) {
-      case Error::end_of_stream:
+      switch (static_cast<error>(err)) {
+      case error::end_of_stream:
         return "end of stream";
-      case Error::kPartialMessage:
+      case error::kPartialMessage:
         return "partial message";
-      case Error::kNeedMore:
+      case error::need_more:
         return "need more";
-      case Error::kUnexpectedBody:
+      case error::kUnexpectedBody:
         return "unexpected body";
-      case Error::kNeedBuffer:
+      case error::kNeedBuffer:
         return "need buffer";
-      case Error::kEndOfChunk:
+      case error::kEndOfChunk:
         return "end of chunk";
-      case Error::kBufferOverflow:
+      case error::kBufferOverflow:
         return "buffer overflow";
-      case Error::kHeaderLimit:
+      case error::kHeaderLimit:
         return "header limit exceeded";
-      case Error::kBodyLimit:
+      case error::kBodyLimit:
         return "body limit exceeded";
-      case Error::kBadAlloc:
+      case error::kBadAlloc:
         return "bad alloc";
-      case Error::kBadLineEnding:
+      case error::kBadLineEnding:
         return "bad line ending";
-      case Error::kEmptyMethod:
+      case error::kEmptyMethod:
         return "empty method";
-      case Error::kBadMethod:
+      case error::kBadMethod:
         return "bad method";
-      case Error::kBadUri:
+      case error::kBadUri:
         return "bad uri";
-      case Error::kBadScheme:
+      case error::kBadScheme:
         return "bad scheme";
-      case Error::kBadHost:
+      case error::kBadHost:
         return "bad host";
-      case Error::kBadPort:
+      case error::kBadPort:
         return "bad port";
-      case Error::kBadPath:
+      case error::kBadPath:
         return "bad path";
-      case Error::kBadParams:
+      case error::kBadParams:
         return "bad params";
-      case Error::kBadVersion:
+      case error::kBadVersion:
         return "bad version";
-      case Error::kBadStatus:
+      case error::kBadStatus:
         return "bad status";
-      case Error::kBadReason:
+      case error::kBadReason:
         return "bad reason";
-      case Error::kBadHeader:
+      case error::kBadHeader:
         return "bad header";
-      case Error::kEmptyHeaderName:
+      case error::kEmptyHeaderName:
         return "empty header name";
-      case Error::kEmptyHeaderValue:
+      case error::kEmptyHeaderValue:
         return "empty header value";
-      case Error::kBadHeaderName:
+      case error::kBadHeaderName:
         return "bad header name";
-      case Error::kBadHeaderValue:
+      case error::kBadHeaderValue:
         return "bad header value";
-      case Error::kBadContentLength:
+      case error::kBadContentLength:
         return "bad Content-Length";
-      case Error::kBadTransferEncoding:
+      case error::kBadTransferEncoding:
         return "bad Transfer-Encoding";
-      case Error::kBadChunk:
+      case error::kBadChunk:
         return "bad chunk";
-      case Error::kBadChunkExtension:
+      case error::kBadChunkExtension:
         return "bad chunk extension";
-      case Error::kBadObsFold:
+      case error::kBadObsFold:
         return "bad obs-fold";
-      case Error::kMultipleContentLength:
+      case error::kMultipleContentLength:
         return "multiple Content-Length";
-      case Error::kStaleParser:
+      case error::kStaleParser:
         return "stale parser";
-      case Error::kShortRead:
+      case error::kShortRead:
         return "unexpected eof in body";
-      case Error::kInvalidResponse:
+      case error::kInvalidResponse:
         return "invalid response";
-      case Error::kRecvTimeout:
+      case error::kRecvTimeout:
         return "receive timeout";
-      case Error::kRecvRequestTimeoutWithNothing:
+      case error::recv_request_timeout_with_nothing:
         return "receive request timeout with nothing";
-      case Error::kRecvRequestLineTimeout:
+      case error::recv_request_line_timeout:
         return "receive request line timeout";
-      case Error::kRecvRequestHeadersTimeout:
+      case error::recv_request_headers_timeout:
         return "receive request headers timeout";
-      case Error::kRecvRequestBodyTimeout:
+      case error::recv_request_body_timeout:
         return "receive request body timeout";
-      case Error::kSendTimeout:
+      case error::kSendTimeout:
         return "send timeout";
-      case Error::kSendResponseTimeoutWithNothing:
+      case error::kSendResponseTimeoutWithNothing:
         return "send response timeout with nothing";
-      case Error::kSendResponseLineAndHeadersTimeout:
+      case error::kSendResponseLineAndHeadersTimeout:
         return "send response headers timeout";
-      case Error::kSendResponseBodyTimeout:
+      case error::kSendResponseBodyTimeout:
         return "send response body timeout";
 
       default:
@@ -189,16 +189,16 @@ namespace net::http1 {
     }
   };
 
-  inline std::error_code make_error_code(net::http1::Error err) { // NOLINT
+  inline std::error_code make_error_code(net::http1::error err) { // NOLINT
     static net::http1::HttpErrorCategory category{};
-    return {static_cast<std::underlying_type_t<net::http1::Error>>(err), category};
+    return {static_cast<std::underlying_type_t<net::http1::error>>(err), category};
   }
 
 } // namespace net::http1
 
 namespace std {
   template <>
-  struct is_error_code_enum<net::http1::Error> {
+  struct is_error_code_enum<net::http1::error> {
     static bool const value = true; // NOLINT
   };
 } // namespace std
