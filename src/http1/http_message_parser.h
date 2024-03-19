@@ -315,19 +315,18 @@ namespace net::http1 {
  * @see RFC 9112: https://datatracker.ietf.org/doc/html/rfc9112
  * @see whatwg URL specification: https://url.spec.whatwg.org/#urls
  */
+  enum class parse_state {
+    nothing_yet,
+    start_line,
+    expecting_newline,
+    header,
+    body,
+    completed
+  };
 
   template <http1_message Message>
   class message_parser {
    public:
-    enum class state {
-      nothing_yet,
-      start_line,
-      expecting_newline,
-      header,
-      body,
-      completed
-    };
-
     explicit message_parser(Message* message) noexcept
       : message_(message) {
       name_.reserve(8192);
@@ -339,7 +338,7 @@ namespace net::http1 {
     }
 
     void Reset() noexcept {
-      message_state_ = state::nothing_yet;
+      message_state_ = parse_state::nothing_yet;
       header_state_ = HeaderState::kName;
       uri_state_ = UriState::kInitial;
       param_state_ = ParamState::kName;
@@ -365,8 +364,8 @@ namespace net::http1 {
       };
       while (!ec) {
         switch (message_state_) {
-        case state::nothing_yet:
-        case state::start_line: {
+        case parse_state::nothing_yet:
+        case parse_state::start_line: {
           if constexpr (http1_request<Message>) {
             ParseRequestLine(arg, ec);
           } else {
@@ -374,19 +373,19 @@ namespace net::http1 {
           }
           break;
         }
-        case state::expecting_newline: {
+        case parse_state::expecting_newline: {
           ParseExpectingNewLine(arg, ec);
           break;
         }
-        case state::header: {
+        case parse_state::header: {
           ParseHeader(arg, ec);
           break;
         }
-        case state::body: {
+        case parse_state::body: {
           ParseBody(arg, ec);
           break;
         }
-        case state::completed: {
+        case parse_state::completed: {
           return arg.parsed_len;
         }
         }
@@ -395,7 +394,7 @@ namespace net::http1 {
       return ec == error::need_more ? arg.parsed_len : 0;
     }
 
-    [[nodiscard]] state State() const noexcept {
+    [[nodiscard]] parse_state State() const noexcept {
       return message_state_;
     }
 
@@ -1017,7 +1016,7 @@ namespace net::http1 {
 
       message_->version = ToHttpVersion(version_beg[5] - '0', version_beg[7] - '0');
       arg.parsed_len += 10;
-      message_state_ = state::expecting_newline;
+      message_state_ = parse_state::expecting_newline;
     }
 
     /*
@@ -1138,7 +1137,7 @@ namespace net::http1 {
         message_->reason = {reason_beg, p};
         // Skip the "\r\n"
         arg.parsed_len += p - reason_beg + 2;
-        message_state_ = state::expecting_newline;
+        message_state_ = parse_state::expecting_newline;
         return;
       }
       ec = error::need_more;
@@ -1158,11 +1157,11 @@ namespace net::http1 {
         return;
       }
       if (*line_beg == '\r' && *(line_beg + 1) == '\n') {
-        message_state_ = state::body;
+        message_state_ = parse_state::body;
         arg.parsed_len += 2;
         return;
       }
-      message_state_ = state::header;
+      message_state_ = parse_state::header;
     }
 
     /*
@@ -1314,7 +1313,7 @@ namespace net::http1 {
       name_.clear();
       inner_parsed_len_ = 0;
       header_state_ = HeaderState::kName;
-      message_state_ = state::expecting_newline;
+      message_state_ = parse_state::expecting_newline;
     }
 
     // Note that header name must be lowecase.
@@ -1405,7 +1404,7 @@ namespace net::http1 {
     //  WARN: Currently this library only deal with Content-Length case.
     void ParseBody(Argument& arg, error_code& ec) {
       if (message_->content_length == 0) {
-        message_state_ = state::completed;
+        message_state_ = parse_state::completed;
         return;
       }
       const char* body_beg = arg.buffer_beg + arg.parsed_len;
@@ -1416,11 +1415,11 @@ namespace net::http1 {
       message_->body.reserve(message_->content_length);
       message_->body = {body_beg, body_beg + message_->content_length};
       arg.parsed_len += message_->content_length;
-      message_state_ = state::completed;
+      message_state_ = parse_state::completed;
     }
 
     // States.
-    state message_state_{state::nothing_yet};
+    parse_state message_state_{parse_state::nothing_yet};
     RequestLineState request_line_state_{RequestLineState::kMethod};
     StatusLineState status_line_state_{StatusLineState::kVersion};
     UriState uri_state_{UriState::kInitial};

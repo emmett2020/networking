@@ -67,20 +67,18 @@ namespace net::http1 {
     };
 
     // Get detailed error enum by message parser state.
-    template <http1_request Request>
-    http1::error detailed_error(typename message_parser<Request>::state s) noexcept {
-      using state = typename message_parser<Request>::state;
+    inline http1::error detailed_error(parse_state s) noexcept {
       switch (s) {
-      case state::nothing_yet:
+      case parse_state::nothing_yet:
         return http1::error::recv_request_timeout_with_nothing;
-      case state::start_line:
-      case state::expecting_newline:
+      case parse_state::start_line:
+      case parse_state::expecting_newline:
         return http1::error::recv_request_line_timeout;
-      case state::header:
+      case parse_state::header:
         return http1::error::recv_request_headers_timeout;
-      case state::body:
+      case parse_state::body:
         return http1::error::recv_request_body_timeout;
-      case state::completed:
+      case parse_state::completed:
         return http1::error::success;
       }
     }
@@ -119,16 +117,14 @@ namespace net::http1 {
                  auto update_state = [&state](auto start, auto stop, std::size_t recv_size) {
                    state.buffer.commit(recv_size);
                    state.request.update_metric(start, stop, recv_size);
-                   // state.remaining_time -=
-                   // std::chrono::duration_cast<std::chrono::seconds>(start - stop).count();
+                   state.remaining_time -= std::chrono::duration_cast<std::chrono::seconds>(
+                     start - stop);
                  };
 
                  // Sent error to downstream receiver if receive operation timeout.
                  auto handle_timeout = [&state] noexcept {
-                   // ERROR
-                   // std::error_code err = detailed_error(state.parser.State());
-                   // return ex::just_error(err);
-                   return ex::just_error(http1::error::kRecvTimeout);
+                   std::error_code err = detailed_error(state.parser.State());
+                   return ex::just_error(err);
                  };
 
                  // Parse HTTP1 request uses receive buffer.
