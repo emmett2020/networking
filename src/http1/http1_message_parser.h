@@ -82,7 +82,7 @@ namespace net::http1 {
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 240-255
     };
 
-    /*
+    /**
      * @brief   Check whether a character meets the requirement of HTTP tokens.
      * @details Tokens are short textual identifiers that do not include whitespace
      *          or delimiters.
@@ -119,7 +119,7 @@ namespace net::http1 {
       return {reinterpret_cast<const char*>(beg), reinterpret_cast<const char*>(end)};
     }
 
-    /*
+    /**
      * @brief   Check whether a character meets the requirement of HTTP URI.
      * @details Tokens are short textual identifiers that do not include whitespace
      *          or delimiters.

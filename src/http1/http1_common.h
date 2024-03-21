@@ -25,17 +25,25 @@
 
 #include <magic_enum.hpp>
 
-namespace net::http1 {
+namespace net::http::common {
+  namespace detail {
+    static constexpr std::array<std::string_view, 5> http_versions =
+      {"HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3.0", "UNKNOWN_HTTP_VERSION"};
 
+  }
+
+  /**
+   * @detail HTTP scheme
+  */
   enum class http_scheme {
     http,
     https,
     unknown
   };
 
-  static constexpr std::array<std::string_view, 5> http_versions =
-    {"HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3.0", "UNKNOWN_HTTP_VERSION"};
-
+  /**
+   * @detail HTTP version
+  */
   enum class http_version {
     http10,
     http11,
@@ -44,6 +52,10 @@ namespace net::http1 {
     unknown
   };
 
+  /**
+   * @detail Convert given integer number to http version enum.
+   * @param total Equals to http major version * 10 + http minor version
+  */
   constexpr http_version to_http_version(int total) {
     if (total == 10) {
       return http_version::http10;
@@ -60,32 +72,39 @@ namespace net::http1 {
     return http_version::unknown;
   }
 
+  /// @detail Convert given integer numbers to http version enum.
   constexpr http_version to_http_version(int major, int minor) {
     return to_http_version(major * 10 + minor);
   }
 
-  constexpr std::string_view http_version_to_string(http_version version) noexcept {
+  /// @detail Convert given HTTP version enum to uppercase string.
+  constexpr std::string_view to_http_version_string(http_version version) noexcept {
     if (version == http_version::http10) {
-      return http_versions[0];
+      return detail::http_versions[0];
     }
     if (version == http_version::http11) {
-      return http_versions[1];
+      return detail::http_versions[1];
     }
     if (version == http_version::http20) {
-      return http_versions[2];
+      return detail::http_versions[2];
     }
     if (version == http_version::http30) {
-      return http_versions[3];
+      return detail::http_versions[3];
     }
-    return http_versions[4];
+    return detail::http_versions[4];
   }
 
+  /**
+   * @brief HTTP method definition.
+   * @attention Note that the delete method is not named "delete" because it conflicts with
+   * the delete keyword, we name it "del".
+  */
   enum class http_method {
     get,
     head,
     post,
     put,
-    delete_, // conflict with delete keyword
+    del,
     trace,
     control,
     purge,
@@ -94,7 +113,8 @@ namespace net::http1 {
     unknown
   };
 
-  constexpr std::string_view http_method_to_string(http_method method) noexcept {
+  /// @brief Convert given HTTP method enum to uppercase string.
+  constexpr std::string_view to_http_method_string(http_method method) noexcept {
     switch (method) {
     case http_method::get:
       return "GET";
@@ -104,7 +124,7 @@ namespace net::http1 {
       return "POST";
     case http_method::put:
       return "PUT";
-    case http_method::delete_:
+    case http_method::del:
       return "DELETE";
     case http_method::trace:
       return "TRACE";
@@ -121,6 +141,7 @@ namespace net::http1 {
     }
   }
 
+  /// @brief Convert given HTTP method string to enum.
   constexpr http_method to_http_method(std::string_view method) noexcept {
     if (method == "GET") {
       return http_method::get;
@@ -135,7 +156,7 @@ namespace net::http1 {
       return http_method::put;
     }
     if (method == "DELETE") {
-      return http_method::delete_;
+      return http_method::del;
     }
     if (method == "TRACE") {
       return http_method::trace;
@@ -149,13 +170,17 @@ namespace net::http1 {
     if (method == "OPTIONS") {
       return http_method::options;
     }
-
     return http_method::unknown;
   }
 
+  /**
+   * @brief HTTP status code definition.
+   * @attention Note that the continue status code is not named "continue" because it conflicts with
+   * the continue keyword, we name it "cont".
+  */
   enum class http_status_code {
     unknown = 0,
-    continue_ = 100, // conflict with continue keyword
+    cont = 100,
     ok = 200,
     create = 201,
     accepted = 202,
@@ -205,16 +230,118 @@ namespace net::http1 {
     script_server_error = 544,
   };
 
-  inline std::string http_status_code_to_string(http_status_code code) noexcept {
-    // TODO: refactor a sufficient way
-    return std::to_string(static_cast<uint32_t>(code));
+  /// @brief Convert given HTTP status code to integer string.
+  constexpr std::string to_http_status_code_string(http_status_code code) noexcept {
+    switch (code) {
+    case http_status_code::unknown:
+      return "0";
+    case http_status_code::cont:
+      return "100";
+    case http_status_code::ok:
+      return "200";
+    case http_status_code::create:
+      return "201";
+    case http_status_code::accepted:
+      return "202";
+    case http_status_code::non_authoritative:
+      return "203";
+    case http_status_code::no_content:
+      return "204";
+    case http_status_code::reset_content:
+      return "205";
+    case http_status_code::partial_content:
+      return "206";
+    case http_status_code::multi_status:
+      return "207";
+    case http_status_code::multiple_choices:
+      return "300";
+    case http_status_code::moved_permanently:
+      return "301";
+    case http_status_code::moved_temporarily:
+      return "302";
+    case http_status_code::see_other:
+      return "303";
+    case http_status_code::not_modified:
+      return "304";
+    case http_status_code::use_proxy:
+      return "305";
+    case http_status_code::temporary_redirect:
+      return "307";
+    case http_status_code::permanent_redirect:
+      return "308";
+    case http_status_code::bad_request:
+      return "400";
+    case http_status_code::unauthorized:
+      return "401";
+    case http_status_code::payment_required:
+      return "402";
+    case http_status_code::forbidden:
+      return "403";
+    case http_status_code::not_found:
+      return "404";
+    case http_status_code::method_not_allowed:
+      return "405";
+    case http_status_code::not_acceptable:
+      return "406";
+    case http_status_code::request_timeout:
+      return "408";
+    case http_status_code::length_required:
+      return "411";
+    case http_status_code::precondition_failed:
+      return "412";
+    case http_status_code::request_entity_too_large:
+      return "413";
+    case http_status_code::request_uri_too_large:
+      return "414";
+    case http_status_code::unsupported_media_type:
+      return "415";
+    case http_status_code::range_not_satisfiable:
+      return "416";
+    case http_status_code::expectation_failed:
+      return "417";
+    case http_status_code::unprocessable_entity:
+      return "422";
+    case http_status_code::locked:
+      return "423";
+    case http_status_code::failed_dependency:
+      return "424";
+    case http_status_code::upgrade_required:
+      return "426";
+    case http_status_code::unavailable_for_legal_reasons:
+      return "451";
+    case http_status_code::internal_server_error:
+      return "500";
+    case http_status_code::not_implemented:
+      return "501";
+    case http_status_code::bad_gateway:
+      return "502";
+    case http_status_code::service_unavailable:
+      return "503";
+    case http_status_code::gateway_timeout:
+      return "504";
+    case http_status_code::version_not_supported:
+      return "505";
+    case http_status_code::variant_also_varies:
+      return "506";
+    case http_status_code::insufficient_storage:
+      return "507";
+    case http_status_code::not_extended:
+      return "510";
+    case http_status_code::frequency_capping:
+      return "514";
+    case http_status_code::script_server_error:
+      return "544";
+    default:
+      return "0";
+    }
   }
 
-  constexpr std::string_view http_status_reason(http_status_code code) noexcept {
+  /// @brief Convert given HTTP status code to string.
+  constexpr std::string_view to_http_status_reason(http_status_code code) noexcept {
     switch (code) {
     case http_status_code::unknown:
       return "Unknown Status";
-    case http_status_code::continue_:
+    case http_status_code::cont:
       return "Continue";
     case http_status_code::ok:
       return "OK";
@@ -313,13 +440,13 @@ namespace net::http1 {
     }
   }
 
-  inline http_status_code to_http_status_code(std::string_view status) noexcept {
-    int value{0};
-    auto [ptr, ec]{std::from_chars(status.data(), status.data() + status.size(), value)};
+  /// @brief Convert given string to http status code enum.
+  constexpr http_status_code to_http_status_code(std::string_view status) noexcept {
+    int value = 0;
+    auto [ptr, ec] = std::from_chars(status.data(), status.data() + status.size(), value);
     if (ec != std::errc()) {
       return http_status_code::unknown;
     }
-
     return magic_enum::enum_cast<http_status_code>(value).value_or(http_status_code::unknown);
   }
 

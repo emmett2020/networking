@@ -19,6 +19,7 @@
 #include "http1/http1_common.h"
 
 namespace net::http1 {
+  using namespace http::common; // NOLINT
   template <typename T>
   concept http1_response = requires(T& t) {
     { t.version } -> std::convertible_to<http_version>;
