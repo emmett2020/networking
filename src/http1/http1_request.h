@@ -25,9 +25,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "http1/http_common.h"
-#include "http1/http_metric.h"
-#include "http1/http_option.h"
+#include "http1/http1_common.h"
+#include "http1/http1_metric.h"
+#include "http1/http1_option.h"
 
 namespace net::http1 {
   enum class message_direction {
@@ -37,9 +37,9 @@ namespace net::http1 {
 
   // A request received from a client.
   struct RequestBase {
-    HttpMethod method{HttpMethod::kUnknown};
-    HttpScheme scheme{HttpScheme::kUnknown};
-    HttpVersion version{HttpVersion::kUnknown};
+    http_method method{http_method::unknown};
+    http_scheme scheme{http_scheme::unknown};
+    http_version version{http_version::unknown};
     uint16_t port = 0;
     std::string host;
     std::string path;
@@ -76,11 +76,11 @@ namespace net::http1 {
       }
     }
 
-    HttpMethod Method() const noexcept {
+    http_method Method() const noexcept {
       return method;
     }
 
-    HttpScheme Scheme() const noexcept {
+    http_scheme Scheme() const noexcept {
       return scheme;
     }
 
@@ -100,7 +100,7 @@ namespace net::http1 {
       return uri;
     }
 
-    HttpVersion Version() const noexcept {
+    http_version Version() const noexcept {
       return version;
     }
 

@@ -24,14 +24,14 @@
 #include <unordered_map>
 #include <vector>
 
-#include "http1/http_common.h"
+#include "http1/http1_common.h"
 
 namespace net::http1 {
 
   // A response received from a client.
   struct ResponseBase {
-    HttpVersion version{HttpVersion::kUnknown};
-    HttpStatusCode status_code;
+    http_version version{http_version::unknown};
+    http_status_code status_code;
     std::string reason;
     std::string body;
     std::size_t content_length{0};
@@ -39,7 +39,7 @@ namespace net::http1 {
   };
 
   struct Response : public ResponseBase {
-    HttpVersion Version() const noexcept {
+    http_version Version() const noexcept {
       return version;
     }
 
@@ -74,7 +74,7 @@ namespace net::http1 {
     std::optional<std::string> MakeResponseString() const noexcept {
       std::string buffer;
       buffer.reserve(8192);
-      if (version == HttpVersion::kUnknown || status_code == HttpStatusCode::kUnknown) {
+      if (version == http_version::unknown || status_code == http_status_code::unknown) {
         return std::nullopt;
       }
 

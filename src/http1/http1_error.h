@@ -23,50 +23,50 @@ namespace net::http1 {
   enum class error {
     success = 0,
     end_of_stream,
-    kPartialMessage,
+    partial_message,
     need_more,
-    kUnexpectedBody,
-    kNeedBuffer,
-    kEndOfChunk,
-    kBufferOverflow,
-    kHeaderLimit,
-    kBodyLimit,
-    kBadAlloc,
-    kBadLineEnding,
-    kEmptyMethod,
-    kBadMethod,
-    kBadUri,
-    kBadScheme,
-    kBadHost,
-    kBadPort,
-    kBadPath,
-    kBadParams,
-    kBadVersion,
-    kBadStatus,
-    kBadReason,
-    kBadHeader,
-    kBadHeaderName,
-    kEmptyHeaderName,
-    kEmptyHeaderValue,
-    kBadHeaderValue,
-    kBadContentLength,
-    kBadTransferEncoding,
-    kBadChunk,
-    kBadChunkExtension,
-    kBadObsFold,
-    kMultipleContentLength,
-    kStaleParser,
-    kShortRead,
-    kInvalidResponse,
-    kRecvTimeout,
+    unexpected_body,
+    need_buffer,
+    end_of_chunk,
+    buffer_overflow,
+    header_limit,
+    body_limit,
+    bad_alloc,
+    bad_line_ending,
+    empty_method,
+    bad_method,
+    bad_uri,
+    bad_scheme,
+    bad_host,
+    bad_port,
+    bad_path,
+    bad_params,
+    bad_version,
+    bad_status,
+    bad_reason,
+    bad_header,
+    bad_header_name,
+    empty_header_name,
+    empty_header_value,
+    bad_header_value,
+    bad_content_length,
+    bad_transfer_encoding,
+    bad_chunk,
+    bad_chunk_extension,
+    bad_obs_fold,
+    multiple_content_length,
+    stale_parser,
+    short_read,
+    invalid_response,
+    recv_timeout,
     recv_request_timeout_with_nothing,
     recv_request_line_timeout,
     recv_request_headers_timeout,
     recv_request_body_timeout,
-    kSendTimeout,
-    kSendResponseTimeoutWithNothing,
-    kSendResponseLineAndHeadersTimeout,
-    kSendResponseBodyTimeout
+    send_timeout,
+    send_response_timeout_with_nothing,
+    send_response_line_and_headers_timeout,
+    send_response_body_timeout
   };
 
   class HttpErrorCategory : public std::error_category {
@@ -81,77 +81,77 @@ namespace net::http1 {
       switch (static_cast<error>(err)) {
       case error::end_of_stream:
         return "end of stream";
-      case error::kPartialMessage:
+      case error::partial_message:
         return "partial message";
       case error::need_more:
         return "need more";
-      case error::kUnexpectedBody:
+      case error::unexpected_body:
         return "unexpected body";
-      case error::kNeedBuffer:
+      case error::need_buffer:
         return "need buffer";
-      case error::kEndOfChunk:
+      case error::end_of_chunk:
         return "end of chunk";
-      case error::kBufferOverflow:
+      case error::buffer_overflow:
         return "buffer overflow";
-      case error::kHeaderLimit:
+      case error::header_limit:
         return "header limit exceeded";
-      case error::kBodyLimit:
+      case error::body_limit:
         return "body limit exceeded";
-      case error::kBadAlloc:
+      case error::bad_alloc:
         return "bad alloc";
-      case error::kBadLineEnding:
+      case error::bad_line_ending:
         return "bad line ending";
-      case error::kEmptyMethod:
+      case error::empty_method:
         return "empty method";
-      case error::kBadMethod:
+      case error::bad_method:
         return "bad method";
-      case error::kBadUri:
+      case error::bad_uri:
         return "bad uri";
       case error::kBadScheme:
         return "bad scheme";
-      case error::kBadHost:
+      case error::bad_host:
         return "bad host";
-      case error::kBadPort:
+      case error::bad_port:
         return "bad port";
-      case error::kBadPath:
+      case error::bad_path:
         return "bad path";
-      case error::kBadParams:
+      case error::bad_params:
         return "bad params";
-      case error::kBadVersion:
+      case error::bad_version:
         return "bad version";
-      case error::kBadStatus:
+      case error::bad_status:
         return "bad status";
-      case error::kBadReason:
+      case error::bad_reason:
         return "bad reason";
-      case error::kBadHeader:
+      case error::bad_header:
         return "bad header";
-      case error::kEmptyHeaderName:
+      case error::empty_header_name:
         return "empty header name";
-      case error::kEmptyHeaderValue:
+      case error::empty_header_value:
         return "empty header value";
-      case error::kBadHeaderName:
+      case error::bad_header_name:
         return "bad header name";
-      case error::kBadHeaderValue:
+      case error::bad_header_value:
         return "bad header value";
-      case error::kBadContentLength:
+      case error::bad_content_length:
         return "bad Content-Length";
-      case error::kBadTransferEncoding:
+      case error::bad_transfer_encoding:
         return "bad Transfer-Encoding";
-      case error::kBadChunk:
+      case error::bad_chunk:
         return "bad chunk";
-      case error::kBadChunkExtension:
+      case error::bad_chunk_extension:
         return "bad chunk extension";
-      case error::kBadObsFold:
+      case error::bad_obs_fold:
         return "bad obs-fold";
-      case error::kMultipleContentLength:
+      case error::multiple_content_length:
         return "multiple Content-Length";
-      case error::kStaleParser:
+      case error::stale_parser:
         return "stale parser";
-      case error::kShortRead:
+      case error::short_read:
         return "unexpected eof in body";
-      case error::kInvalidResponse:
+      case error::invalid_response:
         return "invalid response";
-      case error::kRecvTimeout:
+      case error::recv_timeout:
         return "receive timeout";
       case error::recv_request_timeout_with_nothing:
         return "receive request timeout with nothing";
@@ -161,13 +161,13 @@ namespace net::http1 {
         return "receive request headers timeout";
       case error::recv_request_body_timeout:
         return "receive request body timeout";
-      case error::kSendTimeout:
+      case error::send_timeout:
         return "send timeout";
-      case error::kSendResponseTimeoutWithNothing:
+      case error::send_response_timeout_with_nothing:
         return "send response timeout with nothing";
-      case error::kSendResponseLineAndHeadersTimeout:
+      case error::send_response_line_and_headers_timeout:
         return "send response headers timeout";
-      case error::kSendResponseBodyTimeout:
+      case error::send_response_body_timeout:
         return "send response body timeout";
 
       default:

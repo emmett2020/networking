@@ -27,134 +27,134 @@
 
 namespace net::http1 {
 
-  enum class HttpScheme {
-    kHttp,
-    kHttps,
-    kUnknown
+  enum class http_scheme {
+    http,
+    https,
+    unknown
   };
 
   static constexpr std::array<std::string_view, 5> kHttpVersions =
     {"HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3.0", "UNKNOWN_HTTP_VERSION"};
 
-  enum class HttpVersion {
-    kHttp10,
-    kHttp11,
-    kHttp20,
-    kHttp30,
-    kUnknown
+  enum class http_version {
+    http10,
+    http11,
+    http20,
+    http30,
+    unknown
   };
 
-  constexpr HttpVersion ToHttpVersion(int total) {
+  constexpr http_version to_http_version(int total) {
     if (total == 10) {
-      return HttpVersion::kHttp10;
+      return http_version::http10;
     }
     if (total == 11) {
-      return HttpVersion::kHttp11;
+      return http_version::http11;
     }
     if (total == 20) {
-      return HttpVersion::kHttp20;
+      return http_version::http20;
     }
     if (total == 30) {
-      return HttpVersion::kHttp30;
+      return http_version::http30;
     }
-    return HttpVersion::kUnknown;
+    return http_version::unknown;
   }
 
-  constexpr HttpVersion ToHttpVersion(int major, int minor) {
-    return ToHttpVersion(major * 10 + minor);
+  constexpr http_version to_http_version(int major, int minor) {
+    return to_http_version(major * 10 + minor);
   }
 
-  constexpr std::string_view HttpVersionToString(HttpVersion version) noexcept {
-    if (version == HttpVersion::kHttp10) {
+  constexpr std::string_view HttpVersionToString(http_version version) noexcept {
+    if (version == http_version::http10) {
       return kHttpVersions[0];
     }
-    if (version == HttpVersion::kHttp11) {
+    if (version == http_version::http11) {
       return kHttpVersions[1];
     }
-    if (version == HttpVersion::kHttp20) {
+    if (version == http_version::http20) {
       return kHttpVersions[2];
     }
-    if (version == HttpVersion::kHttp30) {
+    if (version == http_version::http30) {
       return kHttpVersions[3];
     }
     return kHttpVersions[4];
   }
 
-  enum class HttpMethod {
-    kGet,
-    kHead,
-    kPost,
-    kPut,
-    kDelete,
-    kTrace,
-    kControl,
-    kPurge,
-    kOptions,
-    kConnect,
-    kUnknown
+  enum class http_method {
+    get,
+    head,
+    post,
+    put,
+    delete_, // conflict with delete keyword
+    trace,
+    control,
+    purge,
+    options,
+    connect,
+    unknown
   };
 
-  constexpr std::string_view HttpMethodToString(HttpMethod method) noexcept {
+  constexpr std::string_view HttpMethodToString(http_method method) noexcept {
     switch (method) {
-    case HttpMethod::kGet:
+    case http_method::get:
       return "GET";
-    case HttpMethod::kHead:
+    case http_method::head:
       return "HEAD";
-    case HttpMethod::kPost:
+    case http_method::post:
       return "POST";
-    case HttpMethod::kPut:
+    case http_method::put:
       return "PUT";
-    case HttpMethod::kDelete:
+    case http_method::delete_:
       return "DELETE";
-    case HttpMethod::kTrace:
+    case http_method::trace:
       return "TRACE";
-    case HttpMethod::kControl:
+    case http_method::control:
       return "CONTROL";
-    case HttpMethod::kPurge:
+    case http_method::purge:
       return "PURGE";
-    case HttpMethod::kOptions:
+    case http_method::options:
       return "OPTIONS";
-    case HttpMethod::kConnect:
+    case http_method::connect:
       return "CONNECT";
     default:
       return "UNKNOWN";
     }
   }
 
-  constexpr HttpMethod ToHttpMethod(std::string_view method) noexcept {
+  constexpr http_method ToHttpMethod(std::string_view method) noexcept {
     if (method == "GET") {
-      return HttpMethod::kGet;
+      return http_method::get;
     }
     if (method == "HEAD") {
-      return HttpMethod::kHead;
+      return http_method::head;
     }
     if (method == "POST") {
-      return HttpMethod::kPost;
+      return http_method::post;
     }
     if (method == "PUT") {
-      return HttpMethod::kPut;
+      return http_method::put;
     }
     if (method == "DELETE") {
-      return HttpMethod::kDelete;
+      return http_method::delete_;
     }
     if (method == "TRACE") {
-      return HttpMethod::kTrace;
+      return http_method::trace;
     }
     if (method == "CONTROL") {
-      return HttpMethod::kControl;
+      return http_method::control;
     }
     if (method == "PURGE") {
-      return HttpMethod::kPurge;
+      return http_method::purge;
     }
     if (method == "OPTIONS") {
-      return HttpMethod::kOptions;
+      return http_method::options;
     }
 
-    return HttpMethod::kUnknown;
+    return http_method::unknown;
   }
 
-  enum class HttpStatusCode {
-    kUnknown = 0,
+  enum class http_status_code {
+    unknown = 0,
     kContinue = 100,
     kOK = 200,
     kCreate = 201,
@@ -205,122 +205,122 @@ namespace net::http1 {
     kScriptServerError = 544,
   };
 
-  inline std::string HttpStatusCodeToString(HttpStatusCode code) noexcept {
+  inline std::string HttpStatusCodeToString(http_status_code code) noexcept {
     // TODO(xiaoming): refactor a sufficient way
     return std::to_string(static_cast<uint32_t>(code));
   }
 
-  constexpr std::string_view HttpStatusReason(HttpStatusCode code) noexcept {
+  constexpr std::string_view HttpStatusReason(http_status_code code) noexcept {
     switch (code) {
-    case HttpStatusCode::kUnknown:
+    case http_status_code::unknown:
       return "Unknown Status";
-    case HttpStatusCode::kContinue:
+    case http_status_code::kContinue:
       return "Continue";
-    case HttpStatusCode::kOK:
+    case http_status_code::kOK:
       return "OK";
-    case HttpStatusCode::kCreate:
+    case http_status_code::kCreate:
       return "Created";
-    case HttpStatusCode::kAccepted:
+    case http_status_code::kAccepted:
       return "Accepted";
-    case HttpStatusCode::kNonAuthoritative:
+    case http_status_code::kNonAuthoritative:
       return "Non-Authoritative Information";
-    case HttpStatusCode::kNoContent:
+    case http_status_code::kNoContent:
       return "No Content";
-    case HttpStatusCode::kResetContent:
+    case http_status_code::kResetContent:
       return "Reset Content";
-    case HttpStatusCode::kPartialContent:
+    case http_status_code::kPartialContent:
       return "Partial Content";
-    case HttpStatusCode::kMultiStatus:
+    case http_status_code::kMultiStatus:
       return "Multi-Status";
-    case HttpStatusCode::kMultipleChoices:
+    case http_status_code::kMultipleChoices:
       return "Multiple Choices";
-    case HttpStatusCode::kMovedPermanently:
+    case http_status_code::kMovedPermanently:
       return "Moved Permanently";
-    case HttpStatusCode::kMovedTemporarily:
+    case http_status_code::kMovedTemporarily:
       return "Found";
-    case HttpStatusCode::kSeeOther:
+    case http_status_code::kSeeOther:
       return "See Other";
-    case HttpStatusCode::kNotModified:
+    case http_status_code::kNotModified:
       return "Not Modified";
-    case HttpStatusCode::kUseProxy:
+    case http_status_code::kUseProxy:
       return "Use Proxy";
-    case HttpStatusCode::kTemporaryRedirect:
+    case http_status_code::kTemporaryRedirect:
       return "Temporary Redirect";
-    case HttpStatusCode::kPermanentRedirect:
+    case http_status_code::kPermanentRedirect:
       return "Permanent Redirect";
-    case HttpStatusCode::kBadRequest:
+    case http_status_code::kBadRequest:
       return "Bad Request";
-    case HttpStatusCode::kUnauthorized:
+    case http_status_code::kUnauthorized:
       return "Authorization Required";
-    case HttpStatusCode::kPaymentRequired:
+    case http_status_code::kPaymentRequired:
       return "Payment Required";
-    case HttpStatusCode::kForbidden:
+    case http_status_code::kForbidden:
       return "Forbidden";
-    case HttpStatusCode::kNotFound:
+    case http_status_code::kNotFound:
       return "Not Found";
-    case HttpStatusCode::kMethodNotAllowed:
+    case http_status_code::kMethodNotAllowed:
       return "Method Not Allowed";
-    case HttpStatusCode::kNotAcceptable:
+    case http_status_code::kNotAcceptable:
       return "Not Acceptable";
-    case HttpStatusCode::kRequestTimeout:
+    case http_status_code::kRequestTimeout:
       return "Request Time-out";
-    case HttpStatusCode::kLengthRequired:
+    case http_status_code::kLengthRequired:
       return "Length Required";
-    case HttpStatusCode::kPreconditionFailed:
+    case http_status_code::kPreconditionFailed:
       return "Precondition Failed";
-    case HttpStatusCode::kRequestEntityTooLarge:
+    case http_status_code::kRequestEntityTooLarge:
       return "Request Entity Too Large";
-    case HttpStatusCode::kRequestUriTooLarge:
+    case http_status_code::kRequestUriTooLarge:
       return "Request-URI Too Large";
-    case HttpStatusCode::kUnsupportedMediaType:
+    case http_status_code::kUnsupportedMediaType:
       return "Unsupported Media Type";
-    case HttpStatusCode::kRangeNotSatisfiable:
+    case http_status_code::kRangeNotSatisfiable:
       return "Request Range Not Satisfiable";
-    case HttpStatusCode::kExpectationFailed:
+    case http_status_code::kExpectationFailed:
       return "Expectation Failed";
-    case HttpStatusCode::kUnprocessableEntity:
+    case http_status_code::kUnprocessableEntity:
       return "Unprocessable Entity";
-    case HttpStatusCode::kLocked:
+    case http_status_code::kLocked:
       return "Locked";
-    case HttpStatusCode::kFailedDependency:
+    case http_status_code::kFailedDependency:
       return "Failed Dependency";
-    case HttpStatusCode::kUpgradeRequired:
+    case http_status_code::kUpgradeRequired:
       return "Upgrade Required";
-    case HttpStatusCode::kUnavailableForLegalReasons:
+    case http_status_code::kUnavailableForLegalReasons:
       return "Unavailable For Legal Reasons";
-    case HttpStatusCode::kInternalServerError:
+    case http_status_code::kInternalServerError:
       return "Internal Error";
-    case HttpStatusCode::kNotImplemented:
+    case http_status_code::kNotImplemented:
       return "Method Not Implemented";
-    case HttpStatusCode::kBadGateway:
+    case http_status_code::kBadGateway:
       return "Bad Gateway";
-    case HttpStatusCode::kServiceUnavailable:
+    case http_status_code::kServiceUnavailable:
       return "Service Temporarily Unavailable";
-    case HttpStatusCode::kGatewayTimeout:
+    case http_status_code::kGatewayTimeout:
       return "Gateway Time-out";
-    case HttpStatusCode::kVersionNotSupported:
+    case http_status_code::kVersionNotSupported:
       return "HTTP Version Not Supported";
-    case HttpStatusCode::kVariantAlsoVaries:
+    case http_status_code::kVariantAlsoVaries:
       return "Variant Also Negotiates";
-    case HttpStatusCode::kInsufficientStorage:
+    case http_status_code::kInsufficientStorage:
       return "Insufficent Storage";
-    case HttpStatusCode::kNotExtended:
+    case http_status_code::kNotExtended:
       return "Not Extended";
-    case HttpStatusCode::kFrequencyCapping:
+    case http_status_code::kFrequencyCapping:
       return "Frequency Capped";
     default:
       return "Unknown Status Code";
     }
   }
 
-  inline HttpStatusCode ToHttpStatusCode(std::string_view status) noexcept {
-    int value{};
+  inline http_status_code to_http_status_code(std::string_view status) noexcept {
+    int value{0};
     auto [ptr, ec]{std::from_chars(status.data(), status.data() + status.size(), value)};
     if (ec != std::errc()) {
-      return HttpStatusCode::kUnknown;
+      return http_status_code::unknown;
     }
 
-    return magic_enum::enum_cast<HttpStatusCode>(value).value_or(HttpStatusCode::kUnknown);
+    return magic_enum::enum_cast<http_status_code>(value).value_or(http_status_code::unknown);
   }
 
   static constexpr std::string_view kHttpHeaderHost = "Host";

@@ -16,13 +16,13 @@
 
 #pragma once
 
-#include "http1/http_common.h"
+#include "http1/http1_common.h"
 
 namespace net::http1 {
   template <typename T>
   concept http1_response = requires(T& t) {
-    { t.version } -> std::convertible_to<HttpVersion>;
-    { t.status_code } -> std::convertible_to<HttpStatusCode>;
+    { t.version } -> std::convertible_to<http_version>;
+    { t.status_code } -> std::convertible_to<http_status_code>;
     { t.reason } -> std::convertible_to<std::string>;
     { t.body } -> std::convertible_to<std::string>;
     { t.content_length } -> std::convertible_to<std::size_t>;
@@ -31,9 +31,9 @@ namespace net::http1 {
 
   template <typename T>
   concept http1_request = requires(T& t) {
-    { t.method } -> std::convertible_to<HttpMethod>;
-    { t.scheme } -> std::convertible_to<HttpScheme>;
-    { t.version } -> std::convertible_to<HttpVersion>;
+    { t.method } -> std::convertible_to<http_method>;
+    { t.scheme } -> std::convertible_to<http_scheme>;
+    { t.version } -> std::convertible_to<http_version>;
     { t.port } -> std::convertible_to<uint16_t>;
     { t.host } -> std::convertible_to<std::string>;
     { t.path } -> std::convertible_to<std::string>;

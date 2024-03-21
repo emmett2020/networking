@@ -35,14 +35,14 @@
 #include <exec/timed_scheduler.hpp>
 #include <exec/repeat_effect_until.hpp>
 
-#include "http1/http_concept.h"
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
 #include "utils/flat_buffer.h"
-#include "http1/http_common.h"
-#include "http1/http_error.h"
-#include "http1/http_message_parser.h"
-#include "http1/http_response.h"
+#include "http1/http1_common.h"
+#include "http1/http1_error.h"
+#include "http1/http1_message_parser.h"
+#include "http1/http1_response.h"
+#include "http1/http1_concept.h"
 
 namespace ex {
   using namespace stdexec; // NOLINT
