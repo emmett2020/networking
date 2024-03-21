@@ -52,7 +52,7 @@ namespace ex {
 namespace net::http1 {
   struct send_state {
     std::string start_line_and_headers;
-    http1::Response response;
+    http1::response response;
     std::error_code ec{};
     std::uint32_t total_send_size{0};
   };
@@ -165,10 +165,10 @@ namespace net::http1 {
   namespace _handle_request {
     struct handle_request_t {
       template <class Request>
-      ex::sender auto operator()(const Request& request) const noexcept {
-        http1::Response response;
-        response.status_code = http1::HttpStatusCode::kOK;
-        response.version = request.version;
+      ex::sender auto operator()([[maybe_unused]] const Request& request) const noexcept {
+        http1::response response;
+        // response.status_code = http1::http_status_code::ok;
+        // response.version = request.version;
         return ex::just(response);
       }
     };
@@ -180,12 +180,12 @@ namespace net::http1 {
   namespace _create_response {
     struct create_response_t {
       ex::sender auto operator()(send_state& state) const {
-        std::optional<std::string> response_str = state.response.MakeResponseString();
+        std::optional<std::string> response_str = state.response.make_response_string();
         if (response_str.has_value()) {
           state.start_line_and_headers = std::move(*response_str);
         }
         return ex::if_then_else(
-          response_str.has_value(), ex::just(), ex::just_error(http1::error::kInvalidResponse));
+          response_str.has_value(), ex::just(), ex::just_error(http1::error::invalid_response));
       }
     };
   } // namespace _create_response
@@ -195,10 +195,10 @@ namespace net::http1 {
   namespace _start_server {
     template <http1_request Request>
     bool need_keepalive(const Request& request) noexcept {
-      if (request.ContainsHeader(http1::kHttpHeaderConnection)) {
+      if (request.ContainsHeader(http1::http_header_connection)) {
         return true;
       }
-      if (request.Version() == http1::HttpVersion::kHttp11) {
+      if (request.Version() == http1::http_version::http11) {
         return true;
       }
       return false;
@@ -231,7 +231,7 @@ namespace net::http1 {
       id_type id{make_session_id()};
       Socket socket{};
       Request request{};
-      Response response{};
+      http1::response response{};
       std::size_t reuse_cnt{0};
     };
 
@@ -240,7 +240,7 @@ namespace net::http1 {
     struct server {
       using context_type = ex::io_uring_context;
       using request_type = client_request;
-      using response_type = Response;
+      using response_type = response;
       using acceptor_handle_type = sio::io_uring::acceptor_handle<sio::ip::tcp>;
       using acceptor_type = sio::io_uring::acceptor<sio::ip::tcp>;
       using socket_type = sio::io_uring::socket_handle<sio::ip::tcp>;

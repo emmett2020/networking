@@ -69,13 +69,13 @@ namespace net::http1 {
     send_response_body_timeout
   };
 
-  class HttpErrorCategory : public std::error_category {
+  class http_error_category : public std::error_category {
    public:
     [[nodiscard]] const char* name() const noexcept override {
       return "net.http";
     }
 
-    HttpErrorCategory() = default;
+    http_error_category() = default;
 
     [[nodiscard]] std::string message(int err) const override {
       switch (static_cast<error>(err)) {
@@ -107,7 +107,7 @@ namespace net::http1 {
         return "bad method";
       case error::bad_uri:
         return "bad uri";
-      case error::kBadScheme:
+      case error::bad_scheme:
         return "bad scheme";
       case error::bad_host:
         return "bad host";
@@ -169,9 +169,8 @@ namespace net::http1 {
         return "send response headers timeout";
       case error::send_response_body_timeout:
         return "send response body timeout";
-
       default:
-        return "beast.http Error";
+        return "net.http1 Error";
       }
     }
 
@@ -190,7 +189,7 @@ namespace net::http1 {
   };
 
   inline std::error_code make_error_code(net::http1::error err) { // NOLINT
-    static net::http1::HttpErrorCategory category{};
+    static net::http1::http_error_category category{};
     return {static_cast<std::underlying_type_t<net::http1::error>>(err), category};
   }
 

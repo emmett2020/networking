@@ -40,6 +40,8 @@
 // implement others first.
 // TODO: Add some UTF-8 test cases. We should support theses encoding type: Latin1, UTF-8, ASCII,
 //       especially UTF-8.
+// TODO: support chunk
+// TODO: how about std::ranges coding style?
 
 namespace net::http1 {
   namespace detail {
@@ -1534,8 +1536,8 @@ namespace net::http1 {
   };
 
   // TODO: directions are confused, should we make another name to distinct these two requests?
-  using client_request_parser = message_parser<client_request>;
+  // using client_request_parser = message_parser<client_request>;
   // using server_request_parser
-  using server_response_parser = message_parser<Response>;
+  // using server_response_parser = message_parser<response>;
 
 } // namespace net::http1

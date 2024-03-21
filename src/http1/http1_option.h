@@ -19,8 +19,7 @@
 #include <chrono>
 
 namespace net::http1 {
-  // TODO(xiaoming): could get the information from server yaml config.
-  // So it's not constexpr.
+  // TODO: could get the information from server yaml config. So it's not constexpr.
   struct recv_option {
     using duration = std::chrono::seconds;
     duration total_timeout{0};

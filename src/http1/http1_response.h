@@ -28,35 +28,25 @@
 
 namespace net::http1 {
 
-  // A response received from a client.
-  struct ResponseBase {
-    http_version version{http_version::unknown};
-    http_status_code status_code;
-    std::string reason;
-    std::string body;
-    std::size_t content_length{0};
-    std::unordered_map<std::string, std::string> headers;
-  };
-
-  struct Response : public ResponseBase {
-    http_version Version() const noexcept {
-      return version;
+  struct response {
+    http_version version() const noexcept {
+      return version_;
     }
 
-    std::string_view Body() const noexcept {
-      return body;
+    std::string_view body() const noexcept {
+      return body_;
     }
 
-    std::unordered_map<std::string, std::string> Headers() const noexcept {
-      return headers;
+    std::unordered_map<std::string, std::string> headers() const noexcept {
+      return headers_;
     }
 
-    std::unordered_map<std::string, std::string>& Headers() noexcept {
-      return headers;
+    std::unordered_map<std::string, std::string>& headers() noexcept {
+      return headers_;
     }
 
-    std::optional<std::string_view> HeaderValue(const std::string& header_name) const noexcept {
-      for (const auto& [name, value]: headers) {
+    std::optional<std::string_view> header_value(const std::string& header_name) const noexcept {
+      for (const auto& [name, value]: headers_) {
         if (::strcasecmp(name.c_str(), header_name.c_str()) == 0) {
           return value;
         }
@@ -64,30 +54,30 @@ namespace net::http1 {
       return std::nullopt;
     }
 
-    bool ContainsHeader(const std::string& header_name) const noexcept {
+    bool contains_header(const std::string& header_name) const noexcept {
       return std::any_of(
-        headers.cbegin(), headers.cend(), [header_name](const auto& p) noexcept -> bool {
+        headers_.cbegin(), headers_.cend(), [header_name](const auto& p) noexcept -> bool {
           return ::strcasecmp(p.first.c_str(), header_name.c_str()) == 0;
         });
     }
 
-    std::optional<std::string> MakeResponseString() const noexcept {
+    std::optional<std::string> make_response_string() const noexcept {
       std::string buffer;
       buffer.reserve(8192);
-      if (version == http_version::unknown || status_code == http_status_code::unknown) {
+      if (version_ == http_version::unknown || status_code_ == http_status_code::unknown) {
         return std::nullopt;
       }
 
       // append response line
-      buffer.append(HttpVersionToString(version));
+      buffer.append(http_version_to_string(version_));
       buffer.append(" ");
-      buffer.append(HttpStatusCodeToString(status_code));
+      buffer.append(http_status_code_to_string(status_code_));
       buffer.append(" ");
-      buffer.append(HttpStatusReason(status_code));
+      buffer.append(http_status_reason(status_code_));
       buffer.append("\r\n");
 
       // append headers
-      for (const auto& [name, value]: headers) {
+      for (const auto& [name, value]: headers_) {
         buffer.append(name);
         buffer.append(": ");
         buffer.append(value);
@@ -98,6 +88,14 @@ namespace net::http1 {
       // not include body
       return buffer;
     }
+
+   private:
+    http_version version_{http_version::unknown};
+    http_status_code status_code_;
+    std::string reason_;
+    std::string body_;
+    std::size_t content_length_{0};
+    std::unordered_map<std::string, std::string> headers_;
   };
 
 } // namespace net::http1
