@@ -490,4 +490,4 @@ namespace net::http::common {
   static constexpr std::string_view http_header_keepalive = "keep-alive";
   static constexpr std::string_view http_header_close = "close";
 
-}; // namespace net::http1
+} // namespace net::http::common

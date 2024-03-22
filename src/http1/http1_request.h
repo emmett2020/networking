@@ -30,28 +30,25 @@
 #include "http1/http1_option.h"
 
 namespace net::http1 {
+  using namespace net::http::common; // NOLINT
   enum class message_direction {
-    send,
-    receive,
+    send_to_server,
+    receive_from_client,
   };
 
   // A request could be used while client send to server or server send to client.
   template <message_direction MessageDirection>
   struct request {
-    using duration = std::chrono::seconds;
-    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
-    static constexpr auto unlimited_timeout = duration::max();
+    using duration_t = std::chrono::seconds;
+    using timepoint_t = std::chrono::time_point<std::chrono::system_clock>;
+    static constexpr auto unlimited_timeout = duration_t::max();
 
-    static constexpr bool use_for_recv() noexcept {
-      return MessageDirection == message_direction::receive;
-    }
-
-    static constexpr bool use_for_send() noexcept {
-      return MessageDirection == message_direction::send;
+    static constexpr message_direction direction() noexcept {
+      return MessageDirection;
     }
 
     static constexpr auto socket_option() noexcept {
-      if constexpr (use_for_recv()) {
+      if constexpr (direction() == message_direction::receive_from_client) {
         return recv_option{};
       } else {
         return send_option{};
@@ -90,7 +87,7 @@ namespace net::http1 {
       return body_;
     }
 
-    void set_header_content_length(std::size_t length) noexcept {
+    void set_content_length(std::size_t length) noexcept {
       content_length_ = length;
     }
 
@@ -102,17 +99,22 @@ namespace net::http1 {
       return params_;
     }
 
-    std::optional<std::string_view> param_value(const std::string& param_key) const noexcept {
-      auto it = params_.find(param_key);
+    std::optional<std::string_view> param_value(const std::string& name) const noexcept {
+      // TODO: use std::ranges?
+      auto it = params_.find(name);
       if (it == params_.end()) {
         return std::nullopt;
       }
       return it->second;
     }
 
-    bool contains_param(const std::string& param_key) const noexcept {
-      return params_.contains(param_key);
+    bool contains_param(const std::string_view& name) const noexcept {
+      return params_.contains(std::string(name));
     }
+
+    // bool contains_param(const std::string& name) const noexcept {
+    //   return params_.contains(name);
+    // }
 
     std::unordered_map<std::string, std::string> headers() const noexcept {
       return headers_;
@@ -149,7 +151,7 @@ namespace net::http1 {
         });
     }
 
-    void update_metric(const timepoint& start, const timepoint& stop, std::size_t size) {
+    void update_metric(const timepoint_t& start, const timepoint_t& stop, std::size_t size) {
       auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(start - stop);
       if (metric_.time.first.time_since_epoch().count() == 0) {
         metric_.time.first = start;
@@ -160,6 +162,11 @@ namespace net::http1 {
     }
 
    private:
+    // TODO: Should we change std::string and std::unordered_map to thirdparits'
+    // version in order to get a better performance ?
+    // I don't want something allocated at heap...,
+    // We may reference boost::flat_map which also be introduced at cpp23.
+    // https://stackoverflow.com/questions/21166675/boostflat-map-and-its-performance-compared-to-map-and-unordered-map
     http_method method_{http_method::unknown};
     http_scheme scheme_{http_scheme::unknown};
     http_version version_{http_version::unknown};
@@ -174,6 +181,6 @@ namespace net::http1 {
     socket_metric metric_;
   };
 
-  using client_request = request<message_direction::receive>;
-  using server_request = request<message_direction::send>;
+  using client_request = request<message_direction::receive_from_client>;
+  using server_request = request<message_direction::send_to_server>;
 } // namespace net::http1
