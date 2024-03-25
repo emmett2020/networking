@@ -16,4 +16,4 @@
 
 #pragma once
 
-#define ALWARYS_INLINE __attribute__((always_inline))
+#define ALWAYS_INLINE __attribute__((always_inline))

@@ -495,5 +495,15 @@ namespace net::http {
     receive_from_client,
   };
 
+  inline std::uint16_t default_port(http_scheme scheme) noexcept {
+    if (scheme == http_scheme::http) {
+      return 80;
+    }
+    if (scheme == http_scheme::https) {
+      return 443;
+    }
+    return 0;
+  }
+
 
 } // namespace net::http

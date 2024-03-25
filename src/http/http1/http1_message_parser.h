@@ -32,6 +32,7 @@
 #include "http/http_concept.h"
 #include "http/http_error.h"
 #include "http/http1/http1_request.h"
+#include "macro.h"
 
 // TODO: Refactor all documents. Refine some comments.
 // TODO: Still need to implement and optimize this parser. Write more
@@ -42,7 +43,7 @@
 // TODO: support chunk
 // TODO: how about std::ranges coding style?
 
-namespace net::http1 {
+namespace net::http::http1 {
   namespace detail {
     /*
         0 nul    1 soh    2 stx    3 etx    4 eot    5 enq    6 ack    7 bel
@@ -62,22 +63,22 @@ namespace net::http1 {
       112  p   113  q   114  r   115  s   116  t   117  u   118  v   119  w
       120  x   121  y   122  z   123  {   124  |   125  }   126  ~   127 del
     */
-    constexpr std::array<std::uint8_t, 256> token_table = {
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 16
-      0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0, // 32
-      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, // 48
-      0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 64
-      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, // 80
-      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 96
-      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, // 112
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 128
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 144
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 160
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 176
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 192
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 208
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 224
+    constexpr std::array<std::uint8_t, 256> tokens = {
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //   0-15
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //  16-31
+      0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0, //  32-47
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, //  48-63
+      0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  64-79
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, //  80-95
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  96-111
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, // 112-127
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 128-143
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 144-159
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 160-175
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 176-191
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 192-207
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 208-223
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 224-239
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 240-255
     };
 
@@ -89,96 +90,45 @@ namespace net::http1 {
      *          tchar          = "!" | "#"   | "$"   | "%" | "&" | "'" | "*"
      *                           "+" | "-"   | "."   | "^" | "_" | "`" | "|"
      *                           "~" | DIGIT | ALPHA
-     * @param input The charater to be checked.
+     * @param   b The charater to be checked.
     */
-    inline bool is_token(std::byte b) noexcept {
-      return static_cast<bool>(token_table[std::to_integer<uint8_t>(b)]);
+    ALWAYS_INLINE bool is_token(std::byte b) noexcept {
+      return static_cast<bool>(tokens[std::to_integer<uint8_t>(b)]);
     }
 
-    inline bool byte_is(std::byte b, char expect) noexcept {
-      return b == static_cast<std::byte>(expect);
-    }
-
-    // In some platforms, char implements as signed char while other platforms implements unsigned char.
-    // To be safely uses type char, we assume char values 0-127. But std::byte represents a octet, which values 0-255.
-    // So to be safely use this function on all platforms, we must ensure that std::byte only uses 0-127 either.
-    inline std::string_view
-      string_view(const std::byte* const beg, const std::byte* const end) noexcept {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-      return {reinterpret_cast<const char*>(beg), reinterpret_cast<const char*>(end)};
-    }
-
-    inline std::string_view string_view(const std::byte* const beg, std::uint32_t size) noexcept {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-      return {reinterpret_cast<const char*>(beg), size};
-    }
-
-    inline std::string string(const std::byte* const beg, const std::byte* const end) noexcept {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-      return {reinterpret_cast<const char*>(beg), reinterpret_cast<const char*>(end)};
-    }
+    constexpr std::array<uint8_t, 256> uri_characters = {
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //   0-15
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //  16-31
+      0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  32-47
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  48-63
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  64-79
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  80-95
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  96-111
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, // 112-127
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 128-143
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 144-159
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 160-175
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 176-191
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 192-207
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 208-223
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 224-239
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1  // 240-255
+    };
 
     /**
-     * @brief   Check whether a character meets the requirement of HTTP URI.
-     * @details Tokens are short textual identifiers that do not include whitespace
-     *          or delimiters.
-     *          token          = 1*tchar
-     *          tchar          = "!" | "#"   | "$"   | "%" | "&" | "'" | "*"
-     *                           "+" | "-"   | "."   | "^" | "_" | "`" | "|"
-     *                           "~" | DIGIT | ALPHA
-     * @param Input the charater to be checked.
+     * @brief Check whether a character meets the requirement of HTTP URI.
+     * @param b the charater to be checked.
     */
-    inline bool is_path_char(std::byte b) noexcept {
-      constexpr std::array<uint8_t, 256> table{
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //   0
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //  16
-        0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  32
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  48
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  64
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  80
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, //  96
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, // 112
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 128
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 144
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 160
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 176
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 192
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 208
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 224
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1  // 240 - 255
-      };
-      return static_cast<bool>(table[std::to_integer<uint8_t>(b)]);
+    ALWAYS_INLINE bool is_uri_char(std::byte b) noexcept {
+      return static_cast<bool>(uri_characters[std::to_integer<uint8_t>(b)]);
     }
 
     /*
-     * @brief A helper function to make string view use two pointers.
-     * @param first The start address of the data.
-     * @param last  The end address of the data. The data range is half-opened.
-     * @attention To be consistent with parse_xxx functions, the data range of this
-     *            function is also half-open: [first, last).
-    */
-    // inline std::string_view to_string(const std::byte* first, const std::byte* last) noexcept {
-    // return std::basic_string_view<std::byte>{first, static_cast<std::size_t>(last - first)};
-    // }
-
-    inline bool is_alpha(std::byte b) {
-      return (b | std::byte{0x20}) >= std::byte{'a'} && (b | std::byte{0x20}) <= std::byte{'z'};
-    }
-
-    inline bool is_digit(std::byte b) {
-      return (b | std::byte{0x20}) >= std::byte{'0'} && (b | std::byte{0x20}) <= std::byte{'9'};
-    }
-
-    inline bool is_alnum(std::byte b) {
-      return is_alpha(b) && is_digit(b);
-    }
-
-    /*
-     * @brief Skip the whitespace from front.
-     * @param first The start address of the data.
-     * @param last  The end address of the data. The data range is half-opened.
-     * @return The pointer which points to the first non-whitespace position or last
-     *         which represents all charater between [first, last) is white space.
+     * @brief  Skip the whitespace from front.
+     * @param  first The start address of the data.
+     * @param  last  The end address of the data. The data range is half-opened.
+     * @return The pointer which points to the first non-whitespace position or "last"
+     *         which represents all charater between [first, last) is whitespace.
     */
     inline const std::byte* trim_front(const std::byte* first, const std::byte* last) noexcept {
       while (first < last && (*first == std::byte{' '} || *first == std::byte{'\t'})) {
@@ -187,49 +137,72 @@ namespace net::http1 {
       return first;
     }
 
-    inline bool one_of(const std::byte b, char c0, char c1) noexcept {
+    // Calculate the length between two pointers.
+    ALWAYS_INLINE std::uint32_t len(const std::byte* beg, const std::byte* end) noexcept {
+      return end - beg;
+    }
+
+    ALWAYS_INLINE std::string to_string(const std::byte* beg, const std::byte* end) noexcept {
+      return {reinterpret_cast<const char*>(beg), reinterpret_cast<const char*>(end)};
+    }
+
+    ALWAYS_INLINE bool is_alpha(std::byte b) {
+      return (b | std::byte{0x20}) >= std::byte{'a'} && (b | std::byte{0x20}) <= std::byte{'z'};
+    }
+
+    ALWAYS_INLINE bool is_digit(std::byte b) {
+      return (b | std::byte{0x20}) >= std::byte{'0'} && (b | std::byte{0x20}) <= std::byte{'9'};
+    }
+
+    ALWAYS_INLINE bool is_alnum(std::byte b) {
+      return is_alpha(b) && is_digit(b);
+    }
+
+    ALWAYS_INLINE bool byte_is(std::byte b, char expect) noexcept {
+      return b == static_cast<std::byte>(expect);
+    }
+
+    ALWAYS_INLINE bool one_of(const std::byte b, char c0, char c1) noexcept {
       return b == static_cast<std::byte>(c0) || b == static_cast<std::byte>(c1);
     }
 
-    inline bool one_of(const std::byte b, char c0, char c1, char c2) noexcept {
+    ALWAYS_INLINE bool one_of(const std::byte b, char c0, char c1, char c2) noexcept {
       return b == static_cast<std::byte>(c0) || b == static_cast<std::byte>(c1)
           || b == static_cast<std::byte>(c2);
     }
 
-    inline bool one_of(const std::byte b, char c0, char c1, char c2, char c3) noexcept {
+    ALWAYS_INLINE bool one_of(const std::byte b, char c0, char c1, char c2, char c3) noexcept {
       return b == static_cast<std::byte>(c0) || b == static_cast<std::byte>(c1)
           || b == static_cast<std::byte>(c2) || b == static_cast<std::byte>(c3);
     }
 
-    inline bool one_of(const std::byte b, char c0, char c1, char c2, char c3, char c4) noexcept {
+    ALWAYS_INLINE bool
+      one_of(const std::byte b, char c0, char c1, char c2, char c3, char c4) noexcept {
       return b == static_cast<std::byte>(c0) || b == static_cast<std::byte>(c1)
           || b == static_cast<std::byte>(c2) || b == static_cast<std::byte>(c3)
           || b == static_cast<std::byte>(c4);
     }
 
-    inline std::uint32_t len(const std::byte* beg, const std::byte* end) noexcept {
-      return end - beg;
-    }
-
     // Helper function to compare 2 characters.
-    inline bool compare_2_char(const std::byte* p, char c0, char c1) noexcept {
+    ALWAYS_INLINE bool compare_2_char(const std::byte* p, char c0, char c1) noexcept {
       return p[0] == static_cast<std::byte>(c0) && p[1] == static_cast<std::byte>(c1);
     }
 
     // Helper function to compare 3 characters.
-    inline bool compare_3_char(const std::byte* p, char c0, char c1, char c2) noexcept {
+    ALWAYS_INLINE bool compare_3_char(const std::byte* p, char c0, char c1, char c2) noexcept {
       return p[0] == static_cast<std::byte>(c0) && p[1] == static_cast<std::byte>(c1)
           && p[2] == static_cast<std::byte>(c2);
     }
 
     // Helper function to compare 4 characters.
-    inline bool compare_4_char(const std::byte* p, char c0, char c1, char c2, char c3) noexcept {
+    ALWAYS_INLINE bool
+      compare_4_char(const std::byte* p, char c0, char c1, char c2, char c3) noexcept {
       return p[0] == static_cast<std::byte>(c0) && p[1] == static_cast<std::byte>(c1)
           && p[2] == static_cast<std::byte>(c2) && p[3] == static_cast<std::byte>(c3);
     }
 
     // Helper function to compare 5 characters.
-    inline bool
+    ALWAYS_INLINE bool
       compare_5_char(const std::byte* p, char c0, char c1, char c2, char c3, char c4) noexcept {
       return p[0] == static_cast<std::byte>(c0) && p[1] == static_cast<std::byte>(c1)
           && p[2] == static_cast<std::byte>(c2) && p[3] == static_cast<std::byte>(c3)
@@ -237,7 +210,7 @@ namespace net::http1 {
     }
 
     // Helper function to compare 6 characters.
-    inline bool compare_6_char(
+    ALWAYS_INLINE bool compare_6_char(
       const std::byte* p,
       char c0,
       char c1,
@@ -251,7 +224,7 @@ namespace net::http1 {
     }
 
     // Helper function to compare 7 characters.
-    inline bool compare_7_char(
+    ALWAYS_INLINE bool compare_7_char(
       const std::byte* p,
       char c0,
       char c1,
@@ -267,7 +240,7 @@ namespace net::http1 {
     }
 
     // Helper function to compare 8 characters.
-    inline bool compare_8_char(
+    ALWAYS_INLINE bool compare_8_char(
       const std::byte* p,
       char c0,
       char c1,
@@ -284,7 +257,7 @@ namespace net::http1 {
     }
 
     // Helper function to compare "http" characters in case-sensitive mode.
-    inline bool case_compare_http_char(const std::byte* p) {
+    ALWAYS_INLINE bool case_compare_http_char(const std::byte* p) {
       return (p[0] | std::byte{0x20}) == std::byte{'h'}
           && (p[1] | std::byte{0x20}) == std::byte{'t'}
           && (p[2] | std::byte{0x20}) == std::byte{'t'}
@@ -292,7 +265,7 @@ namespace net::http1 {
     }
 
     // Helper function to compare "https" characters in case-sensitive mode.
-    inline bool case_compare_https_char(const std::byte* p) {
+    ALWAYS_INLINE bool case_compare_https_char(const std::byte* p) {
       return (p[0] | std::byte{0x20}) == std::byte{'h'}
           && (p[1] | std::byte{0x20}) == std::byte{'t'}
           && (p[2] | std::byte{0x20}) == std::byte{'t'}
@@ -300,7 +273,7 @@ namespace net::http1 {
           && (p[4] | std::byte{0x20}) == std::byte{'s'};
     }
 
-    inline http_method to_http_method(const std::byte* const beg, const std::byte* const end) {
+    inline http_method to_http_method(const std::byte* beg, const std::byte* end) {
       const std::size_t len = end - beg;
       if (len == 3) {
         if (compare_3_char(beg, 'G', 'E', 'T')) {
@@ -325,7 +298,7 @@ namespace net::http1 {
         }
       } else if (len == 6) {
         if (compare_6_char(beg, 'D', 'E', 'L', 'E', 'T', 'E')) {
-          return http_method::delete_;
+          return http_method::del;
         }
       } else if (len == 7) {
         if (compare_7_char(beg, 'O', 'P', 'T', 'I', 'O', 'N', 'S')) {
@@ -342,20 +315,22 @@ namespace net::http1 {
       return http_method::unknown;
     }
 
-    inline std::uint16_t default_port(http_scheme scheme) noexcept {
-      if (scheme == http_scheme::http) {
-        return 80;
-      }
-      if (scheme == http_scheme::https) {
-        return 443;
-      }
-      return 0;
-    }
-
   } // namespace detail
 
-  // Indicates current parser's state.
-  enum class parse_state {
+  /**
+   * @brief   Indicates current parser's state.
+   * @details Data may need to be parsed several times before it becomes a
+   * complete and properly formed message. This enum describes the current
+   * parsed status.
+   * Specifically,
+   *     - nothing_yet        indicates that no data has been parsed by the current parser.
+   *     - start_line         indicates that the first line of the message is currently being parsed.
+   *     - expecting_new_line indicates that a new row is currently required.
+   *     - header             indicates that the message field is currently being parsed.
+   *     - body               indicates that the message content is currently being parsed.
+   *     - completed          indicates that the parsing is complete and a correctly formatted message is generated.
+  */
+  enum class http1_parse_state {
     nothing_yet,
     start_line,
     expecting_newline,
@@ -365,10 +340,11 @@ namespace net::http1 {
   };
 
   /*
+   * @details
    * Introduction:
    *   This parser is used for parse HTTP/1.0 and HTTP/1.1 message. According to
    * RFC9112, A HTTP/1.1 message consists of a start-line followed by a CRLF and
-   * a sequence of octets in a format similar to the Internet Message Format :
+   * a sequence of octets in a format similar to the Internet Message Format:
    * zero or more header field lines (collectively referred to as the "headers" or
    * the "header section"), an empty line indicating the end of the header
    * section, and an optional message body.
@@ -408,7 +384,7 @@ namespace net::http1 {
    * @see RFC 9110: https://datatracker.ietf.org/doc/html/rfc9110
    * @see RFC 9112: https://datatracker.ietf.org/doc/html/rfc9112
   */
-  template <http1_message Message>
+  template <http1_message_concept Message>
   class message_parser {
     using error_code = std::error_code;
 
@@ -424,7 +400,7 @@ namespace net::http1 {
     }
 
     void reset() noexcept {
-      state_ = parse_state::nothing_yet;
+      state_ = http1_parse_state::nothing_yet;
       header_state_ = header_state::name;
       uri_state_ = uri_state::initial;
       param_state_ = param_state::name;
@@ -436,55 +412,59 @@ namespace net::http1 {
       return message_;
     }
 
-    std::size_t parse(std::span<const std::byte> const_buffer, error_code& ec) {
+    std::size_t parse(std::span<const std::byte> data, error_code& ec) {
       assert(
-        !ec && "net::http1::message_parser::parse() failed. The parameter ec should be clear.");
+        ec == std::errc{}
+        && "net::http::http1::message_parser::parse() failed. The parameter ec should be cleared.");
+
       buffer buf{
-        .beg = const_buffer.data(),
-        .end = const_buffer.data() + const_buffer.size(),
+        .beg = data.data(),
+        .end = data.data() + data.size(),
         .parsed_len = 0,
       };
+
       while (ec == std::errc{}) {
         switch (state_) {
-        case parse_state::nothing_yet:
-        case parse_state::start_line: {
-          if constexpr (http1_request<Message>) {
+        case http1_parse_state::nothing_yet:
+        case http1_parse_state::start_line: {
+          if constexpr (http1_request_concept<Message>) {
             parse_request_line(buf, ec);
           } else {
             parse_status_line(buf, ec);
           }
           break;
         }
-        case parse_state::expecting_newline: {
+        case http1_parse_state::expecting_newline: {
           parse_expecting_new_line(buf, ec);
           break;
         }
-        case parse_state::header: {
+        case http1_parse_state::header: {
           parse_header(buf, ec);
           break;
         }
-        case parse_state::body: {
+        case http1_parse_state::body: {
           parse_body(buf, ec);
           break;
         }
-        case parse_state::completed: {
+        case http1_parse_state::completed: {
           return buf.parsed_len;
         }
         }
       }
+
       // If fatal error occurs, return zero as parsed size.
       return ec == error::need_more ? buf.parsed_len : 0;
     }
 
-    [[nodiscard]] parse_state State() const noexcept {
+    [[nodiscard]] http1_parse_state state() const noexcept {
       return state_;
     }
 
    private:
     struct buffer {
-      const std::byte* beg{nullptr};
-      const std::byte* end{nullptr};
-      std::size_t parsed_len{0};
+      const std::byte* beg = nullptr;
+      const std::byte* end = nullptr;
+      std::size_t parsed_len = 0;
     };
 
     enum class request_line_state {
@@ -566,15 +546,17 @@ namespace net::http1 {
      * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9112:
      *                        method = token
-     * The method token is case-sensitive. By convention, standardized methods are
-     * defined in all-uppercase US-ASCII letters and not allowd to be empty. If no
-     * error occurred, the method field of inner request will be filled and the
-     * state_ of this parser will be changed from method to spaces_before_uri.
+     * The method token is case-sensitive. By convention, standardized methods
+     * are defined in all-uppercase US-ASCII letters and not allowd to be
+     * empty. If no error occurred, the method field of inner request will be
+     * filled and the request_line_state_ of this parser will be changed from
+     * method to spaces_before_uri.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-method
     */
     void parse_method(buffer& buf, error_code& ec) {
-      static_assert(http1_request<Message>);
+      static_assert(http1_request_concept<Message>);
       const std::byte* method_beg = buf.beg + buf.parsed_len;
+
       for (const std::byte* p = method_beg; p < buf.end; ++p) {
         // Collect method string until met first non-method charater.
         if (detail::is_token(*p)) [[likely]] {
@@ -595,7 +577,7 @@ namespace net::http1 {
 
         message_->method = detail::to_http_method(method_beg, p);
         if (message_->method == http_method::unknown) {
-          ec = error::bad_method;
+          ec = error::unknown_method;
           return;
         }
 
@@ -609,11 +591,11 @@ namespace net::http1 {
     /*
      * @param buf Records information about the currently parsed buffer.
      * @param ec The error code which holds detailed failure reason.
-     * @details Parse white spaces before HTTP URI. Multiply whitespaces are
+     * @details Parse whitespaces before HTTP URI. Multiply whitespaces are
      * allowd between method and URI.
     */
     void parse_spaces_before_uri(buffer& buf, error_code& ec) {
-      static_assert(http1_request<Message>);
+      static_assert(http1_request_concept<Message>);
       const std::byte* spaces_beg = buf.beg + buf.parsed_len;
       const std::byte* p = detail::trim_front(spaces_beg, buf.end);
       if (p == buf.end) [[unlikely]] {
@@ -624,6 +606,7 @@ namespace net::http1 {
       request_line_state_ = request_line_state::uri;
     }
 
+    // TODO: Add percent-encoded.
     /*
      * @param buf Records information about the currently parsed buffer.
      * @param ec The error code which holds detailed failure reason.
@@ -638,7 +621,7 @@ namespace net::http1 {
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-target
     */
     void parse_uri(buffer& buf, error_code& ec) noexcept {
-      static_assert(http1_request<Message>);
+      static_assert(http1_request_concept<Message>);
       const std::byte* uri_beg = buf.beg + buf.parsed_len;
       if (uri_beg >= buf.end) {
         ec = error::need_more;
@@ -680,7 +663,7 @@ namespace net::http1 {
         }
         case uri_state::completed: {
           request_line_state_ = request_line_state::spaces_before_http_version;
-          message_->uri = {uri_beg, uri_beg + inner_parsed_len_};
+          message_->uri = detail::to_string(uri_beg, uri_beg + inner_parsed_len_);
           buf.parsed_len += inner_parsed_len_;
           inner_parsed_len_ = 0;
           return;
@@ -901,7 +884,7 @@ namespace net::http1 {
           uri_state_ = uri_state::completed;
           return;
         }
-        if (!detail::is_path_char(*p)) {
+        if (!detail::is_uri_char(*p)) {
           ec = error::bad_path;
           return;
         }
@@ -963,7 +946,7 @@ namespace net::http1 {
           return;
         }
 
-        if (!detail::is_path_char(*p)) {
+        if (!detail::is_uri_char(*p)) {
           ec = error::bad_params;
           return;
         }
@@ -996,7 +979,7 @@ namespace net::http1 {
           param_state_ = param_state::completed;
           return;
         }
-        if (!detail::is_path_char(*p)) {
+        if (!detail::is_uri_char(*p)) {
           ec = error::bad_params;
           return;
         }
@@ -1098,7 +1081,7 @@ namespace net::http1 {
       message_->version = to_http_version(
         std::to_integer<int>(version_beg[5]), std::to_integer<int>(version_beg[7]));
       buf.parsed_len += 10;
-      state_ = parse_state::expecting_newline;
+      state_ = http1_parse_state::expecting_newline;
     }
 
     /*
@@ -1222,7 +1205,7 @@ namespace net::http1 {
 
         // Skip the "\r\n"
         buf.parsed_len += detail::len(reason_beg, p) + 2;
-        state_ = parse_state::expecting_newline;
+        state_ = http1_parse_state::expecting_newline;
         return;
       }
       ec = error::need_more;
@@ -1242,11 +1225,11 @@ namespace net::http1 {
         return;
       }
       if (detail::compare_2_char(line_beg, '\r', '\n')) {
-        state_ = parse_state::body;
+        state_ = http1_parse_state::body;
         buf.parsed_len += 2;
         return;
       }
-      state_ = parse_state::header;
+      state_ = http1_parse_state::header;
     }
 
     /*
@@ -1340,7 +1323,7 @@ namespace net::http1 {
           return;
         }
 
-        std::string header_value = detail::string(value_beg, whitespace + 1);
+        std::string header_value = detail::to_string(value_beg, whitespace + 1);
 
         // Concat all header values in a list.
         if (need_concat_header_value(name_) && message_->headers.contains(name_)) {
@@ -1399,7 +1382,7 @@ namespace net::http1 {
       name_.clear();
       inner_parsed_len_ = 0;
       header_state_ = header_state::name;
-      state_ = parse_state::expecting_newline;
+      state_ = http1_parse_state::expecting_newline;
     }
 
     // Note that header name must be lowecase.
@@ -1490,7 +1473,7 @@ namespace net::http1 {
     //  WARN: Currently this library only deal with Content-Length case.
     void parse_body(buffer& buf, error_code& ec) {
       if (message_->content_length == 0) {
-        state_ = parse_state::completed;
+        state_ = http1_parse_state::completed;
         return;
       }
       const std::byte* body_beg = buf.beg + buf.parsed_len;
@@ -1501,13 +1484,13 @@ namespace net::http1 {
       message_->body.reserve(message_->content_length);
       message_->body = {body_beg, body_beg + message_->content_length};
       buf.parsed_len += message_->content_length;
-      state_ = parse_state::completed;
+      state_ = http1_parse_state::completed;
     }
 
     // States.
     // TODO: Use two bytes to represent all these states to save 4Byte memory one parser.
     // But we should reserch whether this approach will affect time profiency.
-    parse_state state_ = parse_state::nothing_yet;
+    http1_parse_state state_ = http1_parse_state::nothing_yet;
     request_line_state request_line_state_ = request_line_state::method;
     status_line_state status_line_state_ = status_line_state::version;
     uri_state uri_state_ = uri_state::initial;

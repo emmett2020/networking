@@ -35,6 +35,7 @@ namespace net::http {
     bad_alloc,
     bad_line_ending,
     empty_method,
+    unknown_method,
     bad_method,
     bad_uri,
     bad_scheme,
