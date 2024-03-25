@@ -12,20 +12,21 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
+*/
 
 #pragma once
 
 #include <cstdint>
 #include <chrono>
 
-namespace net::http1 {
+namespace net::http {
+  template <typename Tp, typename Dur>
   struct time_metric {
-    using duration = std::chrono::seconds;
-    using timepoint = std::chrono::time_point<std::chrono::system_clock>;
-    timepoint connected{};
-    timepoint first{};
-    timepoint last{};
+    using duration = Dur;
+    using timepoint_t = Tp;
+    timepoint_t connected{};
+    timepoint_t first{};
+    timepoint_t last{};
     duration max{0};
     duration min{0};
     duration elapsed{0};
@@ -36,24 +37,25 @@ namespace net::http1 {
     uint32_t count{0};
   };
 
-  struct socket_metric {
-    time_metric time;
+  struct http_metric {
+    using timepoint_t = std::chrono::time_point<std::chrono::system_clock>;
+    using duration_t = std::chrono::seconds;
+
+    time_metric<timepoint_t, duration_t> time;
     size_metric size;
+
+    void update_time(timepoint_t start, timepoint_t stop) noexcept {
+      auto elapsed = std::chrono::duration_cast<duration_t>(start - stop);
+      if (time.first.time_since_epoch().count() == 0) {
+        time.first = start;
+      }
+      time.last = stop;
+      time.elapsed += elapsed;
+    }
+
+    void update_size(std::size_t sz) noexcept {
+      size.total += sz;
+    }
   };
 
-  struct recv_metric {
-    time_metric time;
-    size_metric size;
-  };
-
-  struct send_metric {
-    time_metric time;
-    size_metric size;
-  };
-
-  struct server_metric {
-    recv_metric recv;
-    send_metric send;
-  };
-
-} // namespace net::http1
+} // namespace net::http

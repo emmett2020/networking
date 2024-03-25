@@ -12,7 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
+*/
 
 #pragma once
 
@@ -28,11 +28,10 @@
 
 #include <fmt/core.h>
 
-#include "http1/http1_common.h"
-#include "http1/http1_concept.h"
-#include "http1/http1_error.h"
-#include "http1/http1_request.h"
-#include "http1/http1_response.h"
+#include "http/http_common.h"
+#include "http/http_concept.h"
+#include "http/http_error.h"
+#include "http/http1/http1_request.h"
 
 // TODO: Refactor all documents. Refine some comments.
 // TODO: Still need to implement and optimize this parser. Write more

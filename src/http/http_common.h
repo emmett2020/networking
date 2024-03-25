@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
+*/
+
 #pragma once
 
 #define MAGIC_ENUM_RANGE_MIN 0
@@ -25,25 +26,19 @@
 
 #include <magic_enum.hpp>
 
-namespace net::http::common {
+namespace net::http {
   namespace detail {
     static constexpr std::array<std::string_view, 5> http_versions =
       {"HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3.0", "UNKNOWN_HTTP_VERSION"};
 
   }
 
-  /**
-   * @detail HTTP scheme
-  */
   enum class http_scheme {
     http,
     https,
     unknown
   };
 
-  /**
-   * @detail HTTP version
-  */
   enum class http_version {
     http10,
     http11,
@@ -490,4 +485,15 @@ namespace net::http::common {
   static constexpr std::string_view http_header_keepalive = "keep-alive";
   static constexpr std::string_view http_header_close = "close";
 
-} // namespace net::http::common
+  enum class http_text_encoding {
+    ascii,
+    utf_8
+  };
+
+  enum class http_message_direction {
+    send_to_server,
+    receive_from_client,
+  };
+
+
+} // namespace net::http

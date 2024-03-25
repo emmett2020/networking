@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Xiaoming Zhang
+ * Copyright 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -12,24 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
+*/
 
 #pragma once
 
-#include <chrono>
-
-namespace net::http1 {
-  // TODO: could get the information from server yaml config. So it's not constexpr.
-  struct recv_option {
-    using duration = std::chrono::seconds;
-    duration total_timeout{0};
-    duration keepalive_timeout{0};
-  };
-
-  struct send_option {
-    using duration = std::chrono::seconds;
-    duration total_timeout{0};
-  };
-
-
-} // namespace net::http1
+#define ALWARYS_INLINE __attribute__((always_inline))

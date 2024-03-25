@@ -12,13 +12,14 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
+*/
 
 #pragma once
+
 #include <string>
 #include <system_error> // NOLINT
 
-namespace net::http1 {
+namespace net::http {
   // Error codes returned from HTTP algorithms and operations.
   enum class error {
     success = 0,
@@ -170,7 +171,7 @@ namespace net::http1 {
       case error::send_response_body_timeout:
         return "send response body timeout";
       default:
-        return "net.http1 Error";
+        return "net.http Error";
       }
     }
 
@@ -188,16 +189,16 @@ namespace net::http1 {
     }
   };
 
-  inline std::error_code make_error_code(net::http1::error err) { // NOLINT
-    static net::http1::http_error_category category{};
-    return {static_cast<std::underlying_type_t<net::http1::error>>(err), category};
+  inline std::error_code make_error_code(net::http::error err) { // NOLINT
+    static net::http::http_error_category category{};
+    return {static_cast<std::underlying_type_t<net::http::error>>(err), category};
   }
 
-} // namespace net::http1
+} // namespace net::http
 
 namespace std {
   template <>
-  struct is_error_code_enum<net::http1::error> {
+  struct is_error_code_enum<net::http::error> {
     static bool const value = true; // NOLINT
   };
 } // namespace std
