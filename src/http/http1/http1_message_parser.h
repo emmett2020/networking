@@ -32,7 +32,6 @@
 #include "http/http_concept.h"
 #include "http/http_error.h"
 #include "http/http1/http1_request.h"
-#include "macro.h"
 
 // TODO: Refactor all documents. Refine some comments.
 // TODO: Still need to implement and optimize this parser. Write more
@@ -92,7 +91,7 @@ namespace net::http::http1 {
      *                           "~" | DIGIT | ALPHA
      * @param   b The charater to be checked.
     */
-    ALWAYS_INLINE bool is_token(std::byte b) noexcept {
+    inline bool is_token(std::byte b) noexcept {
       return static_cast<bool>(tokens[std::to_integer<uint8_t>(b)]);
     }
 
@@ -119,7 +118,7 @@ namespace net::http::http1 {
      * @brief Check whether a character meets the requirement of HTTP URI.
      * @param b the charater to be checked.
     */
-    ALWAYS_INLINE bool is_uri_char(std::byte b) noexcept {
+    inline bool is_uri_char(std::byte b) noexcept {
       return static_cast<bool>(uri_characters[std::to_integer<uint8_t>(b)]);
     }
 
@@ -138,75 +137,73 @@ namespace net::http::http1 {
     }
 
     // Calculate the length between two pointers.
-    ALWAYS_INLINE std::size_t len(const std::byte* beg, const std::byte* end) noexcept {
+    inline std::size_t len(const std::byte* beg, const std::byte* end) noexcept {
       return end - beg;
     }
 
-    ALWAYS_INLINE std::string to_string(const std::byte* beg, const std::byte* end) noexcept {
+    inline std::string to_string(const std::byte* beg, const std::byte* end) noexcept {
       return {reinterpret_cast<const char*>(beg), reinterpret_cast<const char*>(end)};
     }
 
-    ALWAYS_INLINE std::string_view to_string_view(const std::byte* beg, std::size_t len) noexcept {
+    inline std::string_view to_string_view(const std::byte* beg, std::size_t len) noexcept {
       return {reinterpret_cast<const char*>(beg), len};
     }
 
-    ALWAYS_INLINE bool is_alpha(std::byte b) {
+    inline bool is_alpha(std::byte b) {
       return (b | std::byte{0x20}) >= std::byte{'a'} && (b | std::byte{0x20}) <= std::byte{'z'};
     }
 
-    ALWAYS_INLINE bool is_digit(std::byte b) {
+    inline bool is_digit(std::byte b) {
       return (b | std::byte{0x20}) >= std::byte{'0'} && (b | std::byte{0x20}) <= std::byte{'9'};
     }
 
-    ALWAYS_INLINE bool is_alnum(std::byte b) {
+    inline bool is_alnum(std::byte b) {
       return is_alpha(b) && is_digit(b);
     }
 
-    ALWAYS_INLINE bool byte_is(std::byte b, char expect) noexcept {
+    inline bool byte_is(std::byte b, char expect) noexcept {
       return b == static_cast<std::byte>(expect);
     }
 
-    ALWAYS_INLINE bool one_of(const std::byte b, char c0, char c1) noexcept {
+    inline bool one_of(const std::byte b, char c0, char c1) noexcept {
       return b == static_cast<std::byte>(c0) || b == static_cast<std::byte>(c1);
     }
 
-    ALWAYS_INLINE bool one_of(const std::byte b, char c0, char c1, char c2) noexcept {
+    inline bool one_of(const std::byte b, char c0, char c1, char c2) noexcept {
       return b == static_cast<std::byte>(c0) || b == static_cast<std::byte>(c1)
           || b == static_cast<std::byte>(c2);
     }
 
-    ALWAYS_INLINE bool one_of(const std::byte b, char c0, char c1, char c2, char c3) noexcept {
+    inline bool one_of(const std::byte b, char c0, char c1, char c2, char c3) noexcept {
       return b == static_cast<std::byte>(c0) || b == static_cast<std::byte>(c1)
           || b == static_cast<std::byte>(c2) || b == static_cast<std::byte>(c3);
     }
 
-    ALWAYS_INLINE bool
-      one_of(const std::byte b, char c0, char c1, char c2, char c3, char c4) noexcept {
+    inline bool one_of(const std::byte b, char c0, char c1, char c2, char c3, char c4) noexcept {
       return b == static_cast<std::byte>(c0) || b == static_cast<std::byte>(c1)
           || b == static_cast<std::byte>(c2) || b == static_cast<std::byte>(c3)
           || b == static_cast<std::byte>(c4);
     }
 
     // Helper function to compare 2 characters.
-    ALWAYS_INLINE bool compare_2_char(const std::byte* p, char c0, char c1) noexcept {
+    inline bool compare_2_char(const std::byte* p, char c0, char c1) noexcept {
       return p[0] == static_cast<std::byte>(c0) && p[1] == static_cast<std::byte>(c1);
     }
 
     // Helper function to compare 3 characters.
-    ALWAYS_INLINE bool compare_3_char(const std::byte* p, char c0, char c1, char c2) noexcept {
+    inline bool compare_3_char(const std::byte* p, char c0, char c1, char c2) noexcept {
       return p[0] == static_cast<std::byte>(c0) && p[1] == static_cast<std::byte>(c1)
           && p[2] == static_cast<std::byte>(c2);
     }
 
     // Helper function to compare 4 characters.
-    ALWAYS_INLINE bool
-      compare_4_char(const std::byte* p, char c0, char c1, char c2, char c3) noexcept {
+    inline bool compare_4_char(const std::byte* p, char c0, char c1, char c2, char c3) noexcept {
       return p[0] == static_cast<std::byte>(c0) && p[1] == static_cast<std::byte>(c1)
           && p[2] == static_cast<std::byte>(c2) && p[3] == static_cast<std::byte>(c3);
     }
 
     // Helper function to compare 5 characters.
-    ALWAYS_INLINE bool
+    inline bool
       compare_5_char(const std::byte* p, char c0, char c1, char c2, char c3, char c4) noexcept {
       return p[0] == static_cast<std::byte>(c0) && p[1] == static_cast<std::byte>(c1)
           && p[2] == static_cast<std::byte>(c2) && p[3] == static_cast<std::byte>(c3)
@@ -214,7 +211,7 @@ namespace net::http::http1 {
     }
 
     // Helper function to compare 6 characters.
-    ALWAYS_INLINE bool compare_6_char(
+    inline bool compare_6_char(
       const std::byte* p,
       char c0,
       char c1,
@@ -228,7 +225,7 @@ namespace net::http::http1 {
     }
 
     // Helper function to compare 7 characters.
-    ALWAYS_INLINE bool compare_7_char(
+    inline bool compare_7_char(
       const std::byte* p,
       char c0,
       char c1,
@@ -244,7 +241,7 @@ namespace net::http::http1 {
     }
 
     // Helper function to compare 8 characters.
-    ALWAYS_INLINE bool compare_8_char(
+    inline bool compare_8_char(
       const std::byte* p,
       char c0,
       char c1,
@@ -261,7 +258,7 @@ namespace net::http::http1 {
     }
 
     // Helper function to compare "http" characters in case-sensitive mode.
-    ALWAYS_INLINE bool case_compare_http_char(const std::byte* p) {
+    inline bool case_compare_http_char(const std::byte* p) {
       return (p[0] | std::byte{0x20}) == std::byte{'h'}
           && (p[1] | std::byte{0x20}) == std::byte{'t'}
           && (p[2] | std::byte{0x20}) == std::byte{'t'}
@@ -269,7 +266,7 @@ namespace net::http::http1 {
     }
 
     // Helper function to compare "https" characters in case-sensitive mode.
-    ALWAYS_INLINE bool case_compare_https_char(const std::byte* p) {
+    inline bool case_compare_https_char(const std::byte* p) {
       return (p[0] | std::byte{0x20}) == std::byte{'h'}
           && (p[1] | std::byte{0x20}) == std::byte{'t'}
           && (p[2] | std::byte{0x20}) == std::byte{'t'}
@@ -1380,6 +1377,7 @@ namespace net::http::http1 {
         return;
       }
 
+      // TODO: This should be parsed after all headers received, not every time a completed header received.
       // After a completed header line successfully parsed, parse some special
       // headers.
       parse_special_headers(name_, ec);
@@ -1393,30 +1391,29 @@ namespace net::http::http1 {
       state_ = http1_parse_state::expecting_newline;
     }
 
-    // Note that header name must be lowecase.
-    void parse_special_headers(const std::string& header_name, error_code& ec) {
-      if (header_name == "content-length") {
-        return parse_header_content_length(ec);
-      }
-
-      if (header_name == "connection") {
-        return parse_header_connection(ec);
-      }
+    void parse_special_headers(error_code& ec) {
+      parse_header_content_length(ec);
+      parse_header_connection(ec);
     }
 
     void parse_header_connection(error_code& ec) {
+      // TODO: impl
     }
 
     void parse_header_content_length(error_code& ec) {
-      if (!message_->headers.contains("content-length")) {
-        message_->content_length = 0;
+      auto len_str = message_->header_value("content-length");
+      if (!len_str.has_value()) {
+        message_->set_content_length(0);
+        return;
       }
 
-      std::string_view length_string = message_->headers["content-length"];
-      std::size_t length{0};
-      auto [_, res] = std::from_chars(length_string.begin(), length_string.end(), length);
+      std::size_t len = 0;
+      auto [_, res] = std::from_chars(
+        len_str.value().data(), //
+        len_str.value().data() + len_str.value().size(),
+        len);
       if (res == std::errc()) {
-        message_->content_length = length;
+        message_->set_content_length(len);
       } else {
         ec = error::bad_content_length;
       }
@@ -1524,10 +1521,5 @@ namespace net::http::http1 {
     // TODO: whether to use unique_ptr?
     Message* message_{nullptr};
   };
-
-  // TODO: directions are confused, should we make another name to distinct these two requests?
-  // using client_request_parser = message_parser<client_request>;
-  // using server_request_parser
-  // using server_response_parser = message_parser<response>;
 
 } // namespace net::http::http1
