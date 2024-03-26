@@ -17,6 +17,7 @@
 #pragma once
 
 #include <strings.h>
+#include <cinttypes>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -96,14 +97,6 @@ namespace net::http::http1 {
       return version_;
     }
 
-    const std::string& body() const noexcept {
-      return body_;
-    }
-
-    std::string& body() noexcept {
-      return body_;
-    }
-
     const param_t& params() const noexcept {
       return params_;
     }
@@ -177,6 +170,30 @@ namespace net::http::http1 {
       metric_.update_size(size);
     }
 
+    void set_content_length(std::size_t len) noexcept {
+      content_length_ = len;
+    }
+
+    std::size_t content_length() const noexcept {
+      return content_length_;
+    }
+
+    void set_body(const std::string& body) noexcept {
+      body_ = body;
+    }
+
+    void set_body(std::string&& body) noexcept {
+      body_ = std::move(body);
+    }
+
+    const std::string& body() const noexcept {
+      return body_;
+    }
+
+    std::string& body() noexcept {
+      return body_;
+    }
+
    private:
     http_method method_ = http_method::unknown;
     http_scheme scheme_ = http_scheme::unknown;
@@ -187,7 +204,7 @@ namespace net::http::http1 {
     std::string path_;
     std::string uri_;
     std::string body_;
-    std::size_t content_length_{0};
+    std::size_t content_length_ = 0;
 
     header_t headers_;
     param_t params_;

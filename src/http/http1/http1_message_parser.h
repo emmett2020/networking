@@ -25,6 +25,7 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <memory>
 
 #include <fmt/core.h>
 
@@ -143,6 +144,10 @@ namespace net::http::http1 {
 
     inline std::string to_string(const std::byte* beg, const std::byte* end) noexcept {
       return {reinterpret_cast<const char*>(beg), reinterpret_cast<const char*>(end)};
+    }
+
+    inline std::string to_string(const std::byte* beg, std::size_t len) noexcept {
+      return {reinterpret_cast<const char*>(beg), reinterpret_cast<const char*>(beg + len)};
     }
 
     inline std::string_view to_string_view(const std::byte* beg, std::size_t len) noexcept {
@@ -390,12 +395,12 @@ namespace net::http::http1 {
     using error_code = std::error_code;
 
    public:
-    explicit message_parser(Message* message) noexcept
+    explicit message_parser(std::unique_ptr<Message> message) noexcept
       : message_(message) {
       name_.reserve(8192);
     }
 
-    void reset(Message* message) noexcept {
+    void reset(std::unique_ptr<Message> message) noexcept {
       message_ = message;
       reset();
     }
@@ -409,7 +414,7 @@ namespace net::http::http1 {
       name_.clear();
     }
 
-    [[nodiscard]] Message* message() const noexcept {
+    [[nodiscard]] std::unique_ptr<Message> message() const noexcept {
       return message_;
     }
 
@@ -576,12 +581,13 @@ namespace net::http::http1 {
           return;
         }
 
-        message_->method = detail::to_http_method(method_beg, p);
-        if (message_->method == http_method::unknown) {
+        http_method method = detail::to_http_method(method_beg, p);
+        if (method == http_method::unknown) {
           ec = error::unknown_method;
           return;
         }
 
+        message_->set_method(method);
         buf.parsed_len += p - method_beg;
         request_line_state_ = request_line_state::spaces_before_uri;
         return;
@@ -664,7 +670,7 @@ namespace net::http::http1 {
         }
         case uri_state::completed: {
           request_line_state_ = request_line_state::spaces_before_http_version;
-          message_->uri = detail::to_string(uri_beg, uri_beg + inner_parsed_len_);
+          message_->set_uri(detail::to_string(uri_beg, uri_beg + inner_parsed_len_));
           buf.parsed_len += inner_parsed_len_;
           inner_parsed_len_ = 0;
           return;
@@ -708,11 +714,11 @@ namespace net::http::http1 {
 
         auto scheme_len = detail::len(scheme_beg, p);
         if (scheme_len >= 5 && detail::case_compare_https_char(scheme_beg)) {
-          message_->scheme = http_scheme::https;
+          message_->set_scheme(http_scheme::https);
         } else if (scheme_len >= 4 && detail::case_compare_http_char(scheme_beg)) {
-          message_->scheme = http_scheme::http;
+          message_->set_scheme(http_scheme::http);
         } else {
-          message_->scheme = http_scheme::unknown;
+          message_->set_scheme(http_scheme::unknown);
         }
 
         inner_parsed_len_ = scheme_len + 3;
@@ -764,7 +770,7 @@ namespace net::http::http1 {
 
         // Fill host field of inner request.
         auto host_len = detail::len(host_beg, p);
-        message_->host = detail::to_string(host_beg, p);
+        message_->set_host(detail::to_string(host_beg, p));
 
         // Go to next state depends on the first charater after host identifier.
         switch (*p) {
@@ -773,17 +779,17 @@ namespace net::http::http1 {
           uri_state_ = uri_state::port;
           return;
         case std::byte{'/'}:
-          message_->port = default_port(message_->scheme);
+          message_->set_port(default_port(message_->scheme()));
           inner_parsed_len_ += host_len;
           uri_state_ = uri_state::path;
           return;
         case std::byte{'?'}:
-          message_->port = default_port(message_->scheme);
+          message_->set_port(default_port(message_->scheme()));
           inner_parsed_len_ += host_len + 1;
           uri_state_ = uri_state::params;
           return;
         case std::byte{' '}:
-          message_->port = default_port(message_->scheme);
+          message_->set_port(default_port(message_->scheme()));
           inner_parsed_len_ += host_len;
           uri_state_ = uri_state::completed;
           return;
@@ -836,7 +842,7 @@ namespace net::http::http1 {
         if (acc == 0) {
           acc = default_port(message_->scheme);
         }
-        message_->port = acc;
+        message_->set_port(acc);
         auto port_string_len = detail::len(port_beg, p);
         switch (*p) {
         case std::byte{'/'}: {
@@ -875,14 +881,14 @@ namespace net::http::http1 {
       for (const std::byte* p = path_beg; p < buf.end; ++p) {
         if (detail::byte_is(*p, '?')) {
           inner_parsed_len_ += detail::len(path_beg, p) + 1;
-          message_->path = detail::to_string(path_beg, p);
+          message_->set_path(detail::to_string(path_beg, p));
           uri_state_ = uri_state::params;
           return;
         }
 
         if (detail::byte_is(*p, ' ')) {
           inner_parsed_len_ += detail::len(path_beg, p);
-          message_->path = detail::to_string(path_beg, p);
+          message_->set_path(detail::to_string(path_beg, p));
           uri_state_ = uri_state::completed;
           return;
         }
@@ -1080,8 +1086,10 @@ namespace net::http::http1 {
         return;
       }
 
-      message_->version = to_http_version(
+      auto version = to_http_version(
         std::to_integer<int>(version_beg[5]), std::to_integer<int>(version_beg[7]));
+
+      message_->set_version(version);
       buf.parsed_len += 10;
       state_ = http1_parse_state::expecting_newline;
     }
@@ -1227,6 +1235,13 @@ namespace net::http::http1 {
         return;
       }
       if (detail::compare_2_char(line_beg, '\r', '\n')) {
+        // Received all headers, parse some special headers.
+        parse_special_headers(ec);
+        if (ec) {
+          return;
+        }
+
+
         state_ = http1_parse_state::body;
         buf.parsed_len += 2;
         return;
@@ -1377,13 +1392,6 @@ namespace net::http::http1 {
         return;
       }
 
-      // TODO: This should be parsed after all headers received, not every time a completed header received.
-      // After a completed header line successfully parsed, parse some special
-      // headers.
-      parse_special_headers(name_, ec);
-      if (ec) {
-        return;
-      }
       buf.parsed_len += inner_parsed_len_ + 2;
       name_.clear();
       inner_parsed_len_ = 0;
@@ -1461,23 +1469,13 @@ namespace net::http::http1 {
      * @details According to RFC 9110:
      *                  message-body = *OCTET
      *                         OCTET =  any 8-bit sequence of data
-     *
-     *   Parse http header request body. The message body (if any) of an HTTP/1.1
-     * message is used to carry content for the request or response. The message
-     * body is identical to the content unless a transfer coding has been applied.
-     * The rules for determining when a message body is present in an HTTP/1.1
-     * message differ for requests and responses.
-     *   1. The presence of a message body in a REQUEST is signaled by a
-     * Content-Length or Transfer-Encoding header field. Request message framing
-     * is independent of method semantics.
-     *   2. The presence of a message body in a RESPONSE depends on both the
-     * request method to which it is responding and the response status code. This
-     * corresponds to when response content is allowed by HTTP semantics
+     *   The message body (if any) of an HTTP/1.1 message is used to carry
+     *   content for the request or response.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-message-body
+     * @todo Currently this library only deal with Content-Length case.
     */
-    //  WARN: Currently this library only deal with Content-Length case.
     void parse_body(buffer& buf, error_code& ec) {
-      if (message_->content_length == 0) {
+      if (message_->content_length() == 0) {
         state_ = http1_parse_state::completed;
         return;
       }
@@ -1486,15 +1484,11 @@ namespace net::http::http1 {
         ec = error::need_more;
         return;
       }
-      message_->body.reserve(message_->content_length);
-      message_->body = {body_beg, body_beg + message_->content_length};
+      message_->set_body(detail::to_string(body_beg, message_->content_length()));
       buf.parsed_len += message_->content_length;
       state_ = http1_parse_state::completed;
     }
 
-    // States.
-    // TODO: Use two bytes to represent all these states to save 4Byte memory one parser.
-    // But we should reserch whether this approach will affect time profiency.
     http1_parse_state state_ = http1_parse_state::nothing_yet;
     request_line_state request_line_state_ = request_line_state::method;
     status_line_state status_line_state_ = status_line_state::version;
@@ -1502,24 +1496,20 @@ namespace net::http::http1 {
     param_state param_state_ = param_state::name;
     header_state header_state_ = header_state::name;
 
-    // Records the length of the buffer currently parsed, for URI and headers
-    // only. Because both the URI and header contain multiple subparts, different
+    // Records the length of the buffer currently parsed, used for URI and headers
+    // only. Both the URI and header contain multiple subparts, different
     // subparts are parsed by different parsing functions. When parsing a subpart,
-    // we cannot update the parsed_len of the Argument directly, because we do
+    // we cannot update the parsed_len of the buffer directly, because we do
     // not know whether the URI or header can be successfully parsed in the end.
     // However, the subsequent function needs to know the location of the buffer
     // that the previous function  parsed, which is recorded by this variable.
-    uint32_t inner_parsed_len_{0};
+    std::size_t inner_parsed_len_{0};
 
 
-    // TODO: Do we really need this member?
-    // Record the parameter name or header name.
     std::string name_;
 
-    // Inner request. The request pointer must be made available during parser
-    // parsing.
-    // TODO: whether to use unique_ptr?
-    Message* message_{nullptr};
+    // The message to be filled.
+    std::unique_ptr<Message> message_ = nullptr;
   };
 
 } // namespace net::http::http1
