@@ -18,6 +18,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <functional>
 #include <utility>
 #include "http/http_common.h"
 
@@ -32,17 +33,17 @@ namespace net::http::http1 {
     { t.headers() } -> std::convertible_to<std::unordered_map<std::string, std::string>>;
   };
 
-  // TODO: TOO MANY
+  // TODO: TOO MUCH
   template <typename T>
   concept http1_request_concept = requires(T& t, const T& ct) {
     { t.method() } -> std::same_as<http_method>;
-    { t.set_method(std::declval<http_method>()) } -> std::same_as<void>;
+    { t.set_method(http_method{}) } -> std::same_as<void>;
 
     { t.scheme() } -> std::same_as<http_scheme>;
-    { t.set_scheme(std::declval<http_scheme>()) } -> std::same_as<void>;
+    { t.set_scheme(http_scheme{}) } -> std::same_as<void>;
 
     { t.version() } -> std::same_as<http_version>;
-    { t.set_version(std::declval<http_version>()) } -> std::same_as<void>;
+    { t.set_version(http_version{}) } -> std::same_as<void>;
 
     { t.port() } -> std::convertible_to<uint16_t>;
     { t.set_port(std::uint16_t{}) } -> std::same_as<void>;
@@ -66,21 +67,35 @@ namespace net::http::http1 {
     { t.content_length() } -> std::convertible_to<std::size_t>;
     { t.set_content_length(std::size_t{}) } -> std::same_as<void>;
 
-    { t.headers() };
-    { t.add_header(std::string{}) } -> std::convertible_to<bool>;
+    { t.headers() }; // TODO: return what?
+    { t.add_header(std::string{}, std::string{}) } -> std::convertible_to<bool>;
     { t.del_header(std::string{}) } -> std::convertible_to<bool>;
-    { t.clear_header() } -> std::same_as<void>;
+    { t.update_header(std::string{}, std::string{}) } -> std::convertible_to<bool>;
+    { t.clear_headers() } -> std::same_as<void>;
     { t.contain_header(std::string{}) } -> std::convertible_to<bool>;
     { t.append_to_header(std::string{}, std::string{}) } -> std::convertible_to<bool>;
     { t.header_count() } -> std::convertible_to<std::uint32_t>;
+    {
+      t.header_value(std::string{})
+    } -> std::convertible_to<std::optional<std::reference_wrapper<std::string>>>;
+    {
+      ct.header_value(std::string{})
+    } -> std::convertible_to<std::optional<std::reference_wrapper<const std::string>>>;
 
     { t.params() };
-    { t.add_param(std::string{}) } -> std::convertible_to<bool>;
-    { t.del_param(std::string{}) } -> std::convertible_to<bool>;
-    { t.clear_param() } -> std::same_as<void>;
+    { t.add_param(std::string{}, std::string{}) } -> std::convertible_to<bool>;
+    { t.del_param(std::string{}, std::string{}) } -> std::convertible_to<bool>;
+    { t.update_param(std::string{}, std::string{}) } -> std::convertible_to<bool>;
+    { t.clear_params() } -> std::same_as<void>;
     { t.contain_param(std::string{}) } -> std::convertible_to<bool>;
     { t.append_to_param(std::string{}, std::string{}) } -> std::convertible_to<bool>;
     { t.param_count() } -> std::convertible_to<std::uint32_t>;
+    {
+      t.param_value(std::string{})
+    } -> std::convertible_to<std::optional<std::reference_wrapper<std::string>>>;
+    {
+      ct.param_value(std::string{})
+    } -> std::convertible_to<std::optional<std::reference_wrapper<const std::string>>>;
   };
 
   template <typename T>

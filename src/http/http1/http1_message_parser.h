@@ -1343,13 +1343,13 @@ namespace net::http::http1 {
           return;
         }
 
-        std::string header_value = detail::to_string(value_beg, whitespace + 1);
+        std::string value = detail::to_string(value_beg, whitespace + 1);
 
         // Concat all header values in a list.
-        if (need_concat_header_value(name_) && message_->headers.contains(name_)) {
-          message_->headers[name_] += "," + header_value;
+        if (need_concat_header_value(name_) && message_->contain_header(name_)) {
+          message_->append_to_header(name_, "," + value);
         } else {
-          message_->headers[name_] = header_value;
+          message_->append_to_header(name_, value);
         }
         inner_parsed_len_ += detail::len(value_beg, p);
         header_state_ = header_state::header_line_ending;

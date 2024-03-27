@@ -61,8 +61,16 @@ namespace net::http::http1 {
       return method_;
     }
 
+    void set_method(http_method method) noexcept {
+      method_ = method;
+    }
+
     http_scheme scheme() const noexcept {
       return scheme_;
+    }
+
+    void set_scheme(http_scheme scheme) noexcept {
+      scheme_ = scheme;
     }
 
     const std::string& host() const noexcept {
@@ -73,8 +81,16 @@ namespace net::http::http1 {
       return host_;
     }
 
+    void set_host(std::string host) noexcept {
+      host_ = std::move(host);
+    }
+
     std::uint16_t port() const noexcept {
       return port_;
+    }
+
+    void set_port(std::uint16_t port) noexcept {
+      port_ = port;
     }
 
     const std::string& path() const noexcept {
@@ -85,6 +101,10 @@ namespace net::http::http1 {
       return path_;
     }
 
+    void set_path(std::string path) noexcept {
+      path_ = std::move(path);
+    }
+
     const std::string& uri() const noexcept {
       return uri_;
     }
@@ -93,8 +113,16 @@ namespace net::http::http1 {
       return uri_;
     }
 
+    void set_uri(std::string uri) noexcept {
+      uri_ = std::move(uri);
+    }
+
     http_version version() const noexcept {
       return version_;
+    }
+
+    void set_version(http_version version) noexcept {
+      version_ = version;
     }
 
     const param_t& params() const noexcept {
@@ -160,6 +188,21 @@ namespace net::http::http1 {
         }
       }
       return std::nullopt;
+    }
+
+    bool add_header(std::string name, std::string value) noexcept {
+      if (contain_header(name)) {
+        return false;
+      }
+      headers_[std::move(name)] = std::move(value);
+    }
+
+    bool update_header(std::string name, std::string value) noexcept {
+      // TODO
+    }
+
+    bool del_header(std::string name) noexcept {
+      // TODO
     }
 
     void update_metric(
