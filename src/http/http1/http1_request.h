@@ -17,6 +17,7 @@
 #pragma once
 
 #include <strings.h>
+#include <algorithm>
 #include <cinttypes>
 #include <cstdint>
 #include <functional>
@@ -24,6 +25,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 #include "http/http_common.h"
 #include "http/http_concept.h"
@@ -31,6 +33,14 @@
 #include "http/http_option.h"
 
 namespace net::http::http1 {
+  struct ensure_lower_case_t { };
+
+  template <class HashTable>
+  class http1_headers {
+    using key_type = HashTable::key_type;
+    using mapped_type = HashTable::mapped_type;
+  };
+
   // A request could be used while client send to server or server send to client.
   template <
     http_message_direction Direction,
@@ -57,74 +67,6 @@ namespace net::http::http1 {
       return Encoding;
     }
 
-    http_method method() const noexcept {
-      return method_;
-    }
-
-    void set_method(http_method method) noexcept {
-      method_ = method;
-    }
-
-    http_scheme scheme() const noexcept {
-      return scheme_;
-    }
-
-    void set_scheme(http_scheme scheme) noexcept {
-      scheme_ = scheme;
-    }
-
-    const std::string& host() const noexcept {
-      return host_;
-    }
-
-    std::string& host() noexcept {
-      return host_;
-    }
-
-    void set_host(std::string host) noexcept {
-      host_ = std::move(host);
-    }
-
-    std::uint16_t port() const noexcept {
-      return port_;
-    }
-
-    void set_port(std::uint16_t port) noexcept {
-      port_ = port;
-    }
-
-    const std::string& path() const noexcept {
-      return path_;
-    }
-
-    std::string& path() noexcept {
-      return path_;
-    }
-
-    void set_path(std::string path) noexcept {
-      path_ = std::move(path);
-    }
-
-    const std::string& uri() const noexcept {
-      return uri_;
-    }
-
-    std::string& uri() noexcept {
-      return uri_;
-    }
-
-    void set_uri(std::string uri) noexcept {
-      uri_ = std::move(uri);
-    }
-
-    http_version version() const noexcept {
-      return version_;
-    }
-
-    void set_version(http_version version) noexcept {
-      version_ = version;
-    }
-
     const param_t& params() const noexcept {
       return params_;
     }
@@ -133,25 +75,8 @@ namespace net::http::http1 {
       return params_;
     }
 
-    const header_t& headers() const noexcept {
-      return headers_;
-    }
-
-    header_t& headers() noexcept {
-      return headers_;
-    }
-
     bool contain_param(const std::string& name) const noexcept {
       return params_.contains(name);
-    }
-
-    bool contain_header(std::string_view name) const noexcept {
-      return std::any_of(
-        headers_.cbegin(), //
-        headers_.cend(),
-        [name](const auto& cur) noexcept { //
-          return ::strcasecmp(cur.c_str(), name.data()) == 0;
-        });
     }
 
     std::optional<std::reference_wrapper<const std::string>>
@@ -170,39 +95,136 @@ namespace net::http::http1 {
       return std::nullopt;
     }
 
+    bool insert_param(std::string name, std::string value) noexcept {
+      if (params_.contains(name)) {
+        return false;
+      }
+      params_[std::move(name)] = std::move(value);
+      return true;
+    }
+
+    // Return whether name exists.
+    bool delete_param(const std::string& name) noexcept {
+      return params_.erase(name) == 1;
+    }
+
+    void update_param(std::string name, std::string value) noexcept {
+      params_[std::move(name)] = std::move(value);
+    }
+
+    void clear_params() noexcept {
+      params_.clear();
+    }
+
+    void append_param_value(const std::string& name, const std::string& val) noexcept {
+      params_[name] += val;
+    }
+
+    std::size_t count_param() const noexcept {
+      return params_.size();
+    }
+
+    const header_t& headers() const noexcept {
+      return headers_;
+    }
+
+    header_t& headers() noexcept {
+      return headers_;
+    }
+
+    bool contain_header(std::string name) const noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      return headers_.contains(name);
+    }
+
+    bool contain_header(
+      const std::string& name,
+      [[maybe_unused]] ensure_lower_case_t _) const noexcept {
+      return headers_.contains(name);
+    }
+
     std::optional<std::reference_wrapper<const std::string>>
-      header_value(const std::string& name) const noexcept {
-      for (const auto& [n, v]: headers_) {
-        if (::strcasecmp(n.c_str(), name.c_str()) == 0) {
-          return v;
-        }
+      header_value(std::string name) const noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      if (const auto it = headers_.find(name); it != headers_.end()) {
+        return it->second;
+      }
+      return std::nullopt;
+    }
+
+    std::optional<std::reference_wrapper<const std::string>>
+      header_value(const std::string& name, [[maybe_unused]] ensure_lower_case_t _) const noexcept {
+      if (const auto it = headers_.find(name); it != headers_.end()) {
+        return it->second;
+      }
+      return std::nullopt;
+    }
+
+    std::optional<std::reference_wrapper<std::string>> header_value(std::string name) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      if (auto it = headers_.find(name); it != headers_.end()) {
+        return it->second;
       }
       return std::nullopt;
     }
 
     std::optional<std::reference_wrapper<std::string>>
-      header_value(const std::string& name) noexcept {
-      for (auto& [n, v]: headers_) {
-        if (::strcasecmp(n.c_str(), name.c_str()) == 0) {
-          return v;
-        }
+      header_value(const std::string& name, [[maybe_unused]] ensure_lower_case_t _) noexcept {
+      if (auto it = headers_.find(name); it != headers_.end()) {
+        return it->second;
       }
       return std::nullopt;
     }
 
-    bool add_header(std::string name, std::string value) noexcept {
-      if (contain_header(name)) {
+    // Return whether successfully added.
+    bool insert_header(std::string name, std::string value) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      if (headers_.contains(name)) {
         return false;
       }
       headers_[std::move(name)] = std::move(value);
+      return true;
     }
 
-    bool update_header(std::string name, std::string value) noexcept {
-      // TODO
+    void update_header(std::string name, std::string value) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      headers_[std::move(name)] = std::move(value);
     }
 
-    bool del_header(std::string name) noexcept {
-      // TODO
+    void update_header(
+      std::string name,
+      std::string value,
+      [[maybe_unused]] ensure_lower_case_t _) noexcept {
+      headers_[std::move(name)] = std::move(value);
+    }
+
+    bool delete_header(std::string name) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      return headers_.erase(name) == 1;
+    }
+
+    bool delete_header(const std::string& name, [[maybe_unused]] ensure_lower_case_t _) noexcept {
+      return headers_.erase(name) == 1;
+    }
+
+    void clear_headers() noexcept {
+      headers_.clear();
+    }
+
+    void append_header_value(std::string name, const std::string& value) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      headers_[name] += value;
+    }
+
+    void append_header_value(
+      const std::string& name,
+      const std::string& value,
+      [[maybe_unused]] ensure_lower_case_t _) noexcept {
+      headers_[name] += value;
+    }
+
+    std::size_t count_header() const noexcept {
+      return headers_.size();
     }
 
     void update_metric(
@@ -213,41 +235,16 @@ namespace net::http::http1 {
       metric_.update_size(size);
     }
 
-    void set_content_length(std::size_t len) noexcept {
-      content_length_ = len;
-    }
+    http_method method = http_method::unknown;
+    http_scheme scheme = http_scheme::unknown;
+    http_version version = http_version::unknown;
 
-    std::size_t content_length() const noexcept {
-      return content_length_;
-    }
-
-    void set_body(const std::string& body) noexcept {
-      body_ = body;
-    }
-
-    void set_body(std::string&& body) noexcept {
-      body_ = std::move(body);
-    }
-
-    const std::string& body() const noexcept {
-      return body_;
-    }
-
-    std::string& body() noexcept {
-      return body_;
-    }
-
-   private:
-    http_method method_ = http_method::unknown;
-    http_scheme scheme_ = http_scheme::unknown;
-    http_version version_ = http_version::unknown;
-
-    uint16_t port_ = 0;
-    std::string host_;
-    std::string path_;
-    std::string uri_;
-    std::string body_;
-    std::size_t content_length_ = 0;
+    uint16_t port = 0;
+    std::string host;
+    std::string path;
+    std::string uri;
+    std::string body;
+    std::size_t content_length = 0;
 
     header_t headers_;
     param_t params_;

@@ -58,7 +58,7 @@ namespace net::http1 {
   };
 
   namespace _recv_request {
-    template <http1_request Request>
+    template <http1_request_concept Request>
     struct recv_state {
       Request request{};
       message_parser<Request> parser{&request};

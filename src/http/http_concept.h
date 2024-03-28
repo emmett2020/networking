@@ -19,10 +19,32 @@
 #include <concepts>
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include <utility>
+
 #include "http/http_common.h"
+#include "http/hashtable.h"
 
 namespace net::http::http1 {
+
+  namespace detail {
+    template <typename T>
+    concept _http1_header_concept = requires(T& t) {
+      //
+      { t.headers() }; // TODO: return what?
+      { t.insert_header(std::string{}, std::string{}) } -> std::convertible_to<bool>;
+      { t.delete_header(std::string{}) } -> std::same_as<void>;
+      { t.update_header(std::string{}, std::string{}) } -> std::same_as<void>;
+      { t.clear_headers() } -> std::same_as<void>;
+      { t.contain_header(std::string{}) } -> std::convertible_to<bool>;
+      { t.append_header_value(std::string{}, std::string{}) } -> std::same_as<bool>;
+      { t.count_header() } -> std::convertible_to<std::uint32_t>;
+      {
+        t.header_value(std::string{})
+      } -> std::convertible_to<std::optional<std::reference_wrapper<std::string>>>;
+    };
+  } // namespace detail
+
   template <typename T>
   concept http1_response_concept = requires(T& t) {
     { t.version() } -> std::convertible_to<http_version>;
@@ -33,69 +55,38 @@ namespace net::http::http1 {
     { t.headers() } -> std::convertible_to<std::unordered_map<std::string, std::string>>;
   };
 
-  // TODO: TOO MUCH
   template <typename T>
-  concept http1_request_concept = requires(T& t, const T& ct) {
-    { t.method() } -> std::same_as<http_method>;
-    { t.set_method(http_method{}) } -> std::same_as<void>;
+  concept simple_hashtable_concept = requires(T& t) {
+    // type definition
+    { T::key_type };
+    { T::mapped_type };
 
-    { t.scheme() } -> std::same_as<http_scheme>;
-    { t.set_scheme(http_scheme{}) } -> std::same_as<void>;
+    // iterator
+    { t.begin() };
+    { t.end() };
 
-    { t.version() } -> std::same_as<http_version>;
-    { t.set_version(http_version{}) } -> std::same_as<void>;
+    // operations
+    { t.insert() };
+    { t.remove() };
+    { t.update() };
+    { t.contain() };
+    { t.get_value() };
+    { t.append_value() };
+  };
 
-    { t.port() } -> std::convertible_to<uint16_t>;
-    { t.set_port(std::uint16_t{}) } -> std::same_as<void>;
-
-    { t.host() } -> std::convertible_to<std::string&>;
-    { ct.host() } -> std::convertible_to<const std::string&>;
-    { t.set_host(std::string{}) } -> std::same_as<void>;
-
-    { t.path() } -> std::convertible_to<std::string&>;
-    { ct.path() } -> std::convertible_to<const std::string&>;
-    { t.set_path(std::string{}) } -> std::same_as<void>;
-
-    { t.uri() } -> std::convertible_to<std::string&>;
-    { ct.uri() } -> std::convertible_to<const std::string&>;
-    { t.set_uri() } -> std::same_as<void>;
-
-    { t.body() } -> std::convertible_to<std::string&>;
-    { ct.body() } -> std::convertible_to<const std::string&>;
-    { t.set_body() } -> std::same_as<void>;
-
-    { t.content_length() } -> std::convertible_to<std::size_t>;
-    { t.set_content_length(std::size_t{}) } -> std::same_as<void>;
-
-    { t.headers() }; // TODO: return what?
-    { t.add_header(std::string{}, std::string{}) } -> std::convertible_to<bool>;
-    { t.del_header(std::string{}) } -> std::convertible_to<bool>;
-    { t.update_header(std::string{}, std::string{}) } -> std::convertible_to<bool>;
-    { t.clear_headers() } -> std::same_as<void>;
-    { t.contain_header(std::string{}) } -> std::convertible_to<bool>;
-    { t.append_to_header(std::string{}, std::string{}) } -> std::convertible_to<bool>;
-    { t.header_count() } -> std::convertible_to<std::uint32_t>;
-    {
-      t.header_value(std::string{})
-    } -> std::convertible_to<std::optional<std::reference_wrapper<std::string>>>;
-    {
-      ct.header_value(std::string{})
-    } -> std::convertible_to<std::optional<std::reference_wrapper<const std::string>>>;
-
-    { t.params() };
-    { t.add_param(std::string{}, std::string{}) } -> std::convertible_to<bool>;
-    { t.del_param(std::string{}, std::string{}) } -> std::convertible_to<bool>;
-    { t.update_param(std::string{}, std::string{}) } -> std::convertible_to<bool>;
-    { t.clear_params() } -> std::same_as<void>;
-    { t.contain_param(std::string{}) } -> std::convertible_to<bool>;
-    { t.append_to_param(std::string{}, std::string{}) } -> std::convertible_to<bool>;
-    { t.param_count() } -> std::convertible_to<std::uint32_t>;
-    {
-      t.param_value(std::string{})
-    } -> std::convertible_to<std::optional<std::reference_wrapper<std::string>>>;
-    {
-      ct.param_value(std::string{})
-    } -> std::convertible_to<std::optional<std::reference_wrapper<const std::string>>>;
+  template <typename T>
+  concept http1_request_concept = requires(T& t) {
+    { t.method } -> std::convertible_to<http_method>;
+    { t.scheme } -> std::same_as<http_scheme>;
+    { t.uri } -> std::same_as<std::string>;
+    { t.host } -> std::same_as<std::string>;
+    { t.port } -> std::convertible_to<uint16_t>;
+    { t.path } -> std::same_as<std::string>;
+    { t.version } -> std::same_as<http_version>;
+    { t.body } -> std::same_as<std::string>;
+    { t.content_length } -> std::convertible_to<std::size_t>;
+    { simple_hashtable_concept<decltype(t.headers)> };
+    { simple_hashtable_concept<decltype(t.params)> };
   };
 
   template <typename T>
