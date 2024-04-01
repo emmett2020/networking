@@ -31,14 +31,130 @@
 #include "http/http_concept.h"
 #include "http/http_metric.h"
 #include "http/http_option.h"
+#include "utils/string_hash.h"
+
+// TODO:
+// 1. use std::expected as return type
+// 2. replace message_parser::buffer with std::string_view
+// 3. complete simple_hashtable concept
+// 4. add heterogenerous access for unordered_map, especially http_headers type
 
 namespace net::http::http1 {
   struct ensure_lower_case_t { };
 
-  template <class HashTable>
   class http1_headers {
-    using key_type = HashTable::key_type;
-    using mapped_type = HashTable::mapped_type;
+    [[nodiscard]] bool contain(std::string_view name) const noexcept {
+      headers_.find();
+      for (const auto& [n, v]: headers_) {
+        // if (strcasecmp(n.c_str(), const char* s2)) {
+
+
+        std::ranges::equal(name, n, [](unsigned char c1, unsigned char c2) { return c1 == c2; });
+      }
+
+      return headers_.contains(name);
+    }
+
+    // std::ranges::transform(name, name.begin(), tolower);
+
+    // [[nodiscard]] bool contain(std::string name) const noexcept {
+    //   std::ranges::transform(name, name.begin(), tolower);
+    //   return table_.contains(name);
+    // }
+
+    [[nodiscard]] bool
+      contain(const std::string& name, [[maybe_unused]] ensure_lower_case_t _) const noexcept {
+
+      return headers_.contains(name);
+    }
+
+    [[nodiscard]] std::optional<std::reference_wrapper<const std::string>>
+      value(std::string name) const noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      if (const auto it = headers_.find(name); it != headers_.end()) {
+        return it->second;
+      }
+      return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::reference_wrapper<const std::string>>
+      value(const std::string& name, [[maybe_unused]] ensure_lower_case_t _) const noexcept {
+      if (const auto it = headers_.find(name); it != headers_.end()) {
+        return it->second;
+      }
+      return std::nullopt;
+    }
+
+    std::optional<std::reference_wrapper<std::string>> value(std::string name) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      if (auto it = headers_.find(name); it != headers_.end()) {
+        return it->second;
+      }
+      return std::nullopt;
+    }
+
+    std::optional<std::reference_wrapper<std::string>>
+      value(const std::string& name, [[maybe_unused]] ensure_lower_case_t _) noexcept {
+      if (auto it = headers_.find(name); it != headers_.end()) {
+        return it->second;
+      }
+      return std::nullopt;
+    }
+
+    // Return whether successfully added.
+    bool insert(std::string name, const std::string& value) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      if (headers_.contains(name)) {
+        return false;
+      }
+      headers_[std::move(name)] = value;
+      return true;
+    }
+
+    void update(std::string name, const std::string& value) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      headers_[std::move(name)] = value;
+    }
+
+    void update(
+      std::string name,
+      const std::string& value,
+      [[maybe_unused]] ensure_lower_case_t _) noexcept {
+      headers_[std::move(name)] = value;
+    }
+
+    bool remove(std::string name) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      return headers_.erase(name) == 1;
+    }
+
+    bool remove(const std::string& name, [[maybe_unused]] ensure_lower_case_t _) noexcept {
+      return headers_.erase(name) == 1;
+    }
+
+    void clear() noexcept {
+      headers_.clear();
+    }
+
+    void append_value(std::string name, const std::string& value) noexcept {
+      std::ranges::transform(name, name.begin(), tolower);
+      headers_[name] += value;
+    }
+
+    void append_value(
+      const std::string& name,
+      const std::string& value,
+      [[maybe_unused]] ensure_lower_case_t _) noexcept {
+      headers_[name] += value;
+    }
+
+    [[nodiscard]] std::size_t size() const noexcept {
+      return headers_.size();
+    }
+
+
+   private:
+    std::unordered_map<std::string, std::string, util::string_hash, std::equal_to<>> headers_;
   };
 
   // A request could be used while client send to server or server send to client.
