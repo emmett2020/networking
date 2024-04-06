@@ -22,13 +22,15 @@ namespace net::http {
 
   template <class Dur>
   struct http_recv_option {
-    Dur total_timeout{0};
-    Dur keepalive_timeout{0};
+    using duration_t = Dur;
+    duration_t total_timeout{0};
+    duration_t keepalive_timeout{0};
   };
 
   template <class Dur>
   struct http_send_option {
-    Dur total_timeout{0};
+    using duration_t = Dur;
+    duration_t total_timeout{0};
   };
 
   struct http_option {

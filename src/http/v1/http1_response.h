@@ -15,87 +15,57 @@
 
 #pragma once
 
-#include <strings.h>
-#include <cstdint>
-#include <optional>
-#include <ranges>
+#include <cstring>
 #include <string>
-#include <string_view>
-#include <unordered_map>
-#include <vector>
+#include <map>
 
+#include "expected.h"
 #include "http/http_common.h"
+#include "http/http_error.h"
+#include "utils/string_compare.h"
 
 namespace net::http::http1 {
 
   struct response {
-    http_version version() const noexcept {
-      return version_;
-    }
+    using headers_t = std::multimap<std::string, std::string, util::case_insensitive_compare>;
 
-    std::string_view body() const noexcept {
-      return body_;
-    }
-
-    std::unordered_map<std::string, std::string> headers() const noexcept {
-      return headers_;
-    }
-
-    std::unordered_map<std::string, std::string>& headers() noexcept {
-      return headers_;
-    }
-
-    std::optional<std::string_view> header_value(const std::string& header_name) const noexcept {
-      for (const auto& [name, value]: headers_) {
-        if (::strcasecmp(name.c_str(), header_name.c_str()) == 0) {
-          return value;
-        }
-      }
-      return std::nullopt;
-    }
-
-    bool contains_header(const std::string& header_name) const noexcept {
-      return std::any_of(
-        headers_.cbegin(), headers_.cend(), [header_name](const auto& p) noexcept -> bool {
-          return ::strcasecmp(p.first.c_str(), header_name.c_str()) == 0;
-        });
-    }
-
-    std::optional<std::string> make_response_string() const noexcept {
+    [[nodiscard]] string_expected to_string() const noexcept {
       std::string buffer;
-      buffer.reserve(8192);
-      if (version_ == http_version::unknown || status_code_ == http_status_code::unknown) {
-        return std::nullopt;
+      buffer.reserve(65535);
+      if (status_code == http_status_code::unknown) {
+        return net::unexpected(make_error_code(error::unknown_status));
+      }
+      if (version == http_version::unknown) {
+        return net::unexpected(make_error_code(error::bad_version));
       }
 
-      // append response line
-      buffer.append(http_version_to_string(version_));
+      // Append response line.
+      buffer.append(to_http_version_string(version));
       buffer.append(" ");
-      buffer.append(http_status_code_to_string(status_code_));
+      buffer.append(to_http_status_code_string(status_code));
       buffer.append(" ");
-      buffer.append(http_status_reason(status_code_));
+      buffer.append(to_http_status_reason(status_code));
       buffer.append("\r\n");
 
-      // append headers
-      for (const auto& [name, value]: headers_) {
+      // Append headers.
+      for (const auto& [name, value]: headers) {
         buffer.append(name);
         buffer.append(": ");
         buffer.append(value);
         buffer.append("\r\n");
       }
-
       buffer.append("\r\n");
-      // not include body
+
+      // Not include body
       return buffer;
     }
 
-   private:
-    http_version version_{http_version::unknown};
-    http_status_code status_code_;
-    std::string reason_;
-    std::string body_;
-    std::size_t content_length_{0};
-    std::unordered_map<std::string, std::string> headers_;
+    http_version version = http_version::unknown;
+    http_status_code status_code = http_status_code::unknown;
+    std::string reason;
+    std::string body;
+    std::size_t content_length = 0;
+    headers_t headers;
   };
 
-} // namespace net::http1
+} // namespace net::http::http1

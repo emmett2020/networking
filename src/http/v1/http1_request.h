@@ -25,12 +25,6 @@
 #include "http/http_option.h"
 #include "utils/string_compare.h"
 
-// TODO:
-// 1. use std::expected as return type
-// 2. replace message_parser::buffer with std::string_view
-// 3. complete simple_hashtable concept
-// 4. add heterogenerous access for unordered_map, especially http_headers type [DONE]
-
 namespace net::http::http1 {
   // A request could be used while client send to server or server send to client.
   template <
@@ -39,7 +33,7 @@ namespace net::http::http1 {
     http1_metric_concept Metric = http_metric,
     http1_option_concept Option = http_option>
   struct request {
-    using params_t = std::unordered_map<std::string, std::string>;
+    using params_t = std::multimap<std::string, std::string>;
     using headers_t = std::multimap<std::string, std::string, util::case_insensitive_compare>;
     using metric_t = Metric;
     using option_t = Option;

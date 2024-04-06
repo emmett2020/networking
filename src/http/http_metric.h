@@ -22,19 +22,19 @@
 namespace net::http {
   template <typename Tp, typename Dur>
   struct time_metric {
-    using duration = Dur;
+    using duration_t = Dur;
     using timepoint_t = Tp;
     timepoint_t connected{};
     timepoint_t first{};
     timepoint_t last{};
-    duration max{0};
-    duration min{0};
-    duration elapsed{0};
+    duration_t max = 0;
+    duration_t min = 0;
+    duration_t elapsed = 0;
   };
 
   struct size_metric {
-    uint64_t total{0};
-    uint32_t count{0};
+    uint64_t total = 0;
+    uint32_t count = 0;
   };
 
   struct http_metric {

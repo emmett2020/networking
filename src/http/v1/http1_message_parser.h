@@ -17,8 +17,6 @@
 #pragma once
 
 #include <strings.h>
-#include <algorithm>
-#include <cctype>
 #include <charconv>
 #include <cstddef>
 #include <limits>
@@ -34,16 +32,13 @@
 #include "http/http_common.h"
 #include "http/http_concept.h"
 #include "http/http_error.h"
-#include "http/v1/http1_request.h"
 
-// TODO: Refactor all documents. Refine some comments.
 // TODO: Still need to implement and optimize this parser. Write more
 // test case to make this parser robust. This is a long time work, we need to
 // implement others first.
 // TODO: Add some UTF-8 test cases. We should support theses encoding type: Latin1, UTF-8, ASCII,
 //       especially UTF-8.
 // TODO: support chunk
-// TODO: how about std::ranges coding style?
 
 namespace net::http::http1 {
   namespace detail {
@@ -399,7 +394,7 @@ namespace net::http::http1 {
    public:
     explicit message_parser(std::unique_ptr<Message> message) noexcept
       : message_(message) {
-      name_.reserve(8192);
+      inner_name_.reserve(8192);
     }
 
     void reset(std::unique_ptr<Message> message) noexcept {
@@ -412,8 +407,7 @@ namespace net::http::http1 {
       header_state_ = header_state::name;
       uri_state_ = uri_state::initial;
       param_state_ = param_state::name;
-      inner_parsed_len_ = 0;
-      name_.clear();
+      inner_name_.clear();
     }
 
     [[nodiscard]] std::unique_ptr<Message> message() const noexcept {
@@ -479,12 +473,14 @@ namespace net::http::http1 {
       uri,
       spaces_before_http_version,
       version,
+      completed
     };
 
     enum class status_line_state {
       version,
       status_code,
       reason,
+      completed
     };
 
     enum class uri_state {
@@ -501,7 +497,8 @@ namespace net::http::http1 {
       name,
       spaces_before_value,
       value,
-      header_line_ending
+      header_line_ending,
+      completed
     };
 
     enum class param_state {
@@ -510,9 +507,15 @@ namespace net::http::http1 {
       completed
     };
 
+    inline void update_length_and_buffer(
+      const std::size_t parsed_sz,
+      std::size_t& total_parsed_len,
+      const_buffer& data_buffer) noexcept {
+      total_parsed_len += parsed_sz;
+      data_buffer = data_buffer.subspan(parsed_sz);
+    }
+
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9112:
      *               request-line   = method SP request-target SP HTTP-version
      *   A request-line begins with a method token, followed by a single space
@@ -520,35 +523,44 @@ namespace net::http::http1 {
      * protocol version.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-line
     */
-    void parse_request_line(buffer& buf, error_code& ec) {
-      while (ec == std::errc{}) {
+    size_expected parse_request_line(const_buffer buf) noexcept {
+      std::size_t total_parsed_len = 0;
+      size_expected result = 0;
+      while (true) {
         switch (request_line_state_) {
         case request_line_state::method: {
-          parse_method(buf, ec);
+          result = parse_method(buf);
           break;
         }
         case request_line_state::spaces_before_uri: {
-          parse_spaces_before_uri(buf, ec);
+          result = parse_spaces_before_uri(buf);
           break;
         }
         case request_line_state::uri: {
-          parse_uri(buf, ec);
+          result = parse_uri(buf);
           break;
         }
         case request_line_state::spaces_before_http_version: {
-          parse_spaces_before_version(buf, ec);
+          result = parse_spaces_before_version(buf);
           break;
         }
         case request_line_state::version: {
-          parse_request_http_version(buf, ec);
-          return;
+          result = parse_request_http_version(buf);
+          break;
+        }
+        case request_line_state::completed: {
+          state_ = http1_parse_state::expecting_newline;
+          return total_parsed_len;
         }
         }
+        if (!result) {
+          return result;
+        }
+        update_length_and_buffer(*result, total_parsed_len, buf);
       }
     }
 
-    /*
-     * @param buf buffer to be parsed
+    /**
      * @details According to RFC 9112:
      *                        method = token
      * The method token is case-sensitive. By convention, standardized methods
@@ -557,8 +569,8 @@ namespace net::http::http1 {
      * filled and the request_line_state_ of this parser will be changed from
      * method to spaces_before_uri.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-method
-    */
-    size_expected parse_method(const_buffer buf) {
+     */
+    size_expected parse_method(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
       const std::byte* method_beg = buf.data();
       const std::byte* buffer_end = buf.data() + buf.size();
@@ -592,64 +604,23 @@ namespace net::http::http1 {
       return net::unexpected(make_error_code(error::need_more));
     }
 
-    // void parse_method(buffer& buf, error_code& ec) {
-    //   static_assert(http1_request_concept<Message>);
-    //   const std::byte* method_beg = buf.beg + buf.parsed_len;
-    //
-    //   for (const std::byte* p = method_beg; p < buf.end; ++p) {
-    //     // Collect method string until met first non-method charater.
-    //     if (detail::is_token(*p)) [[likely]] {
-    //       continue;
-    //     }
-    //
-    //     // The first character after method string must be whitespace.
-    //     if (*p != std::byte{' '}) {
-    //       ec = error::bad_method;
-    //       return;
-    //     }
-    //
-    //     // Empty method is not allowed.
-    //     if (p == method_beg) {
-    //       ec = error::empty_method;
-    //       return;
-    //     }
-    //
-    //     http_method method = detail::to_http_method(method_beg, p);
-    //     if (method == http_method::unknown) {
-    //       ec = error::unknown_method;
-    //       return;
-    //     }
-    //
-    //     message_->set_method(method);
-    //     buf.parsed_len += p - method_beg;
-    //     request_line_state_ = request_line_state::spaces_before_uri;
-    //     return;
-    //   }
-    //   ec = error::need_more;
-    // }
-
-    /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
-     * @details Parse whitespaces before HTTP URI. Multiply whitespaces are
-     * allowd between method and URI.
-    */
-    void parse_spaces_before_uri(buffer& buf, error_code& ec) {
+    /**
+     * @details Parse multiple whitespaces between method and URI.
+     */
+    size_expected parse_spaces_before_uri(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* spaces_beg = buf.beg + buf.parsed_len;
-      const std::byte* p = detail::trim_front(spaces_beg, buf.end);
-      if (p == buf.end) [[unlikely]] {
-        ec = error::need_more;
-        return;
+      const std::byte* beg = buf.data();
+      const std::byte* end = buf.data() + buf.size();
+      const std::byte* p = detail::trim_front(beg, end);
+      if (p == end) [[unlikely]] {
+        return net::unexpected(make_error_code(error::need_more));
       }
-      buf.parsed_len += p - spaces_beg;
       request_line_state_ = request_line_state::uri;
+      return p - beg;
     }
 
     // TODO: Add percent-encoded.
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details The "http" and "https" URI defined as below:
      *                     http-URI  = "http"  "://" authority path [ "?" query ]
      *                     https-URI = "https" "://" authority path [ "?" query ]
@@ -659,115 +630,113 @@ namespace net::http::http1 {
      * absolute-path. Otherwise it's absolute-form. You may need to read RFC9112
      * to get a detailed difference with these two forms.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-target
+     * @see https://url.spec.whatwg.org
     */
-    void parse_uri(buffer& buf, error_code& ec) noexcept {
+    size_expected parse_uri(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* uri_beg = buf.beg + buf.parsed_len;
-      if (uri_beg >= buf.end) {
-        ec = error::need_more;
-        return;
+      const std::byte* beg = buf.data();
+      const std::byte* end = buf.data() + buf.size();
+      if (beg >= end) {
+        return net::unexpected(make_error_code(error::need_more));
       }
+      size_expected result = 0;
+      std::size_t total_parsed_len = 0;
 
       uri_state_ = uri_state::initial;
-      while (ec == std::errc{}) {
+      while (true) {
         switch (uri_state_) {
         case uri_state::initial: {
-          if (*uri_beg == std::byte{'/'}) {
+          if (*beg == std::byte{'/'}) {
             message_->port = 80;
             uri_state_ = uri_state::path;
           } else {
             uri_state_ = uri_state::scheme;
           }
-          inner_parsed_len_ = 0;
           break;
         }
         case uri_state::scheme: {
-          parse_scheme(buf, ec);
+          result = parse_scheme(buf);
           break;
         }
         case uri_state::host: {
-          parse_host(buf, ec);
+          result = parse_host(buf);
           break;
         }
         case uri_state::port: {
-          parse_port(buf, ec);
+          result = parse_port(buf);
           break;
         }
         case uri_state::path: {
-          parse_path(buf, ec);
+          result = parse_path(buf);
           break;
         }
         case uri_state::params: {
-          parse_params(buf, ec);
+          result = parse_params(buf);
           break;
         }
         case uri_state::completed: {
           request_line_state_ = request_line_state::spaces_before_http_version;
-          message_->set_uri(detail::to_string(uri_beg, uri_beg + inner_parsed_len_));
-          buf.parsed_len += inner_parsed_len_;
-          inner_parsed_len_ = 0;
-          return;
+          message_->uri = detail::to_string(beg, total_parsed_len);
+          return total_parsed_len;
         }
+        } // switch
+        if (!result) {
+          return result;
         }
+        update_length_and_buffer(*result, total_parsed_len, buf);
       }
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9110:
-     *                        scheme = "+" | "-" | "." | DIGIT | ALPHA
+     *                       scheme = "+" | "-" | "." | DIGIT | ALPHA
      * Parse http request scheme. The scheme are case-insensitive and normally
      * provided in lowercase. This library mainly parse two schemes: "http"
      * URI scheme and "https" URI scheme. If no error occurs, the inner request's
      * scheme field will be filled.
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
     */
-    void parse_scheme(buffer& buf, error_code& ec) {
+    size_expected parse_scheme(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* uri_beg = buf.beg + buf.parsed_len;
-      const std::byte* scheme_beg = uri_beg + inner_parsed_len_;
-      for (const std::byte* p = scheme_beg; p < buf.end; ++p) {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+
+      for (const std::byte* p = beg; p < end; ++p) {
         // Skip the scheme character to find first colon.
         if (detail::is_alnum(*p) || detail::one_of(*p, '+', '-', '.')) {
           continue;
         }
 
         // Need more data.
-        if (detail::len(p, buf.end) < 3) {
-          ec = error::need_more;
-          return;
+        if (detail::len(p, end) < 3) {
+          return net::unexpected(make_error_code(error::need_more));
         }
 
         // The characters next to the first non-scheme character must be "://".
         if (detail::compare_3_char(p, ':', '/', '/')) {
-          ec = error::bad_scheme;
-          return;
+          return net::unexpected(make_error_code(error::bad_scheme));
         }
 
-        auto scheme_len = detail::len(scheme_beg, p);
-        if (scheme_len >= 5 && detail::case_compare_https_char(scheme_beg)) {
-          message_->set_scheme(http_scheme::https);
-        } else if (scheme_len >= 4 && detail::case_compare_http_char(scheme_beg)) {
-          message_->set_scheme(http_scheme::http);
+        auto scheme_len = detail::len(beg, p);
+        if (scheme_len >= 5 && detail::case_compare_https_char(beg)) {
+          message_->scheme = http_scheme::https;
+        } else if (scheme_len >= 4 && detail::case_compare_http_char(beg)) {
+          message_->scheme = http_scheme::http;
         } else {
-          message_->set_scheme(http_scheme::unknown);
+          message_->scheme = http_scheme::unknown;
         }
 
-        inner_parsed_len_ = scheme_len + 3;
         uri_state_ = uri_state::host;
-        return;
+        return scheme_len + 3;
       }
 
-      ec = error::need_more;
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     // TODO: In the real world, UTF-8 reg-name could also work.
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9110:
-     *                          host = "-" | "." | DIGIT | ALPHA
+     *                       host = "-" | "." | DIGIT | ALPHA
      * Parse http request host identifier. The host can be IP address style ASCII
      * string (both IPv4 address and IPv6 address) or a domain name ASCII string
      * which could be DNS resolved future. Note that empty host identifier is not
@@ -777,11 +746,12 @@ namespace net::http::http1 {
      * https://datatracker.ietf.org/doc/html/rfc9110#name-authoritative-access
      * https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
     */
-    void parse_host(buffer& buf, error_code& ec) {
+    size_expected parse_host(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* uri_beg = buf.beg + buf.parsed_len;
-      const std::byte* host_beg = uri_beg + inner_parsed_len_;
-      for (const auto* p = host_beg; p < buf.end; ++p) {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+
+      for (const auto* p = beg; p < end; ++p) {
         // Collect host string until met first non-host charater.
         if (detail::is_alnum(*p) || detail::one_of(*p, '-', '.')) {
           continue;
@@ -789,53 +759,45 @@ namespace net::http::http1 {
 
         // The charater after host must be follows.
         if (!detail::one_of(*p, ':', '/', '?', ' ')) {
-          ec = error::bad_host;
-          return;
+          return net::unexpected(make_error_code(error::bad_host));
         }
 
         // An empty host is not allowed at "http" scheme and "https" scheme.
         if (
-          p == host_beg
+          p == beg
           && (message_->scheme == http_scheme::http || message_->scheme == http_scheme::https)) {
-          ec = error::empty_host;
-          return;
+          return net::unexpected(make_error_code(error::empty_host));
         }
 
         // Fill host field of inner request.
-        auto host_len = detail::len(host_beg, p);
-        message_->set_host(detail::to_string(host_beg, p));
+        auto host_len = detail::len(beg, p);
+        message_->host = detail::to_string(beg, p);
 
         // Go to next state depends on the first charater after host identifier.
         switch (*p) {
         case std::byte{':'}:
-          inner_parsed_len_ += host_len + 1;
           uri_state_ = uri_state::port;
-          return;
+          return host_len + 1;
         case std::byte{'/'}:
-          message_->set_port(default_port(message_->scheme()));
-          inner_parsed_len_ += host_len;
+          message_->port = default_port(message_->scheme());
           uri_state_ = uri_state::path;
-          return;
+          return host_len;
         case std::byte{'?'}:
-          message_->set_port(default_port(message_->scheme()));
-          inner_parsed_len_ += host_len + 1;
+          message_->port = default_port(message_->scheme());
           uri_state_ = uri_state::params;
-          return;
+          return host_len + 1;
         case std::byte{' '}:
-          message_->set_port(default_port(message_->scheme()));
-          inner_parsed_len_ += host_len;
+          message_->port = default_port(message_->scheme());
           uri_state_ = uri_state::completed;
-          return;
+          return host_len;
         }
       }
-      ec = error::need_more;
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9110:
-     *                          port = DIGIT
+     *                       port = DIGIT
      * Parse http request port. This function is used to parse http request port.
      * Http request port is a digit charater collection which used for TCP
      * connection. So the port value is less than 65535 in most Unix like
@@ -845,21 +807,19 @@ namespace net::http::http1 {
      * @see
      * https://datatracker.ietf.org/doc/html/rfc9110#name-authoritative-access
     */
-    void parse_port(buffer& buf, error_code& ec) {
+    size_expected parse_port(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
       uint16_t acc = 0;
       uint16_t cur = 0;
 
-      const std::byte* uri_beg = buf.beg + buf.parsed_len;
-      const std::byte* port_beg = uri_beg + inner_parsed_len_;
-
-      for (const std::byte* p = port_beg; p < buf.end; ++p) {
+      for (const std::byte* p = beg; p < end; ++p) {
         // Calculate the port value and save it in acc variable.
         if (detail::is_digit(*p)) [[likely]] {
           cur = std::to_integer<uint8_t>(*p);
-          if (acc * 10 + cur > std::numeric_limits<uint16_t>::max()) {
-            ec = error::too_big_port;
-            return;
+          if (acc * 10 + cur > std::numeric_limits<port_t>::max()) {
+            return net::unexpected(make_error_code(error::too_big_port));
           }
           acc = acc * 10 + cur;
           continue;
@@ -867,224 +827,209 @@ namespace net::http::http1 {
 
         // The first character next to port string should be one of follows.
         if (!detail::one_of(*p, '/', '?', ' ')) {
-          ec = error::bad_port;
-          return;
+          return net::unexpected(make_error_code(error::bad_port));
         }
 
         // Port is zero, so use default port value based on scheme.
         if (acc == 0) {
           acc = default_port(message_->scheme);
         }
-        message_->set_port(acc);
-        auto port_string_len = detail::len(port_beg, p);
+        message_->port = acc;
+        auto port_string_len = detail::len(beg, p);
         switch (*p) {
         case std::byte{'/'}: {
-          inner_parsed_len_ += port_string_len;
           uri_state_ = uri_state::path;
-          return;
+          return port_string_len;
         }
         case std::byte{'?'}: {
-          inner_parsed_len_ += port_string_len + 1;
           uri_state_ = uri_state::params;
-          return;
+          return port_string_len + 1;
         }
         case std::byte{' '}: {
-          inner_parsed_len_ += port_string_len;
           uri_state_ = uri_state::completed;
-          return;
+          return port_string_len;
         }
         } // switch
       }   // for
-      ec = error::need_more;
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9110:
-     *                          path = token
+     *                       path = token
      * Parse http request path. Http request path is defined as the path and
      * filename in a request. It does not include scheme, host, port or query
      * string. If no error occurs, the inner request's path field will be filled.
     */
-    void parse_path(buffer& buf, error_code& ec) {
+    size_expected parse_path(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* const uri_beg = buf.beg + buf.parsed_len;
-      const std::byte* path_beg = uri_beg + inner_parsed_len_;
-      for (const std::byte* p = path_beg; p < buf.end; ++p) {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+
+      for (const std::byte* p = beg; p < end; ++p) {
         if (detail::byte_is(*p, '?')) {
-          inner_parsed_len_ += detail::len(path_beg, p) + 1;
-          message_->set_path(detail::to_string(path_beg, p));
+          message_->path = detail::to_string(beg, p);
           uri_state_ = uri_state::params;
-          return;
+          return detail::len(beg, p) + 1;
         }
 
         if (detail::byte_is(*p, ' ')) {
-          inner_parsed_len_ += detail::len(path_beg, p);
-          message_->set_path(detail::to_string(path_beg, p));
+          message_->path = detail::to_string(beg, p);
           uri_state_ = uri_state::completed;
-          return;
+          return detail::len(beg, p);
         }
 
         if (!detail::is_uri_char(*p)) {
-          ec = error::bad_path;
-          return;
+          return net::unexpected(make_error_code(error::bad_path));
         }
-      } // for
-      ec = error::need_more;
+      }
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
+     * @bried Parse HTTP request parameter name.
      * @details According to RFC 9110:
-     *               parameter-name  = token
-     * The parameter name is allowed to be empty only when explicitly set the
-     * equal mark. In all other situations, an empty parameter name is
-     * forbiddened. Note that there isn't a clear specification illustrate what to
-     * do when there is a repeated key, we just use the last-occur policy now.
+     *                       parameter-name  = token
+     * - case-sensitive: The parameter name should be case-sensitive. However,
+     *   the parameters are saved as is. (Many languages, such as Go, Python,
+     *   and Java, store parameters this way.)
+     * - empty name: The parameter name is allowed to be empty only when
+     *   explicitly set the equal mark. In all other situations, an empty
+     *   parameter name is forbiddened.
+     * - duplicated name: Note that there isn't a clear specification
+     *   illustrate what to do when there is a repeated name, we just store all
+     *   duplicated parameters name in order.
+     * @see parameters: https://datatracker.ietf.org/doc/html/rfc9110#name-parameters
     */
-    void parse_param_name(buffer& buf, error_code& ec) {
+    size_expected parse_param_name(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* uri_beg = buf.beg + buf.parsed_len;
-      const std::byte* name_beg = uri_beg + inner_parsed_len_;
-      for (const std::byte* p = name_beg; p < buf.end; ++p) {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+
+      for (const std::byte* p = beg; p < end; ++p) {
         if (detail::byte_is(*p, '&')) {
+          param_state_ = param_state::name;
+
           // Skip the "?&" or continuous '&' , which represents empty
           // parameter name and parameter value.
-          if (p == name_beg || p - name_beg == 1) {
-            inner_parsed_len_ += 1;
-            return;
+          if (p == beg || p - beg == 1) {
+            return 1;
           }
 
           // When all characters in two ampersand don't contain =, all
           // characters in ampersand (except ampersand) are considered
           // parameter names.
-          name_ = detail::to_string(name_beg, p);
-          message_->params[name_] = "";
-          inner_parsed_len_ += detail::len(name_beg, p) + 1;
-          return;
+          inner_name_ = detail::to_string(beg, p);
+          message_->params.emplace(inner_name_, "");
+          return detail::len(beg, p) + 1;
         }
 
         if (detail::byte_is(*p, '=')) {
-          name_ = detail::to_string(name_beg, p);
-          inner_parsed_len_ += detail::len(name_beg, p) + 1;
+          inner_name_ = detail::to_string(beg, p);
           param_state_ = param_state::value;
-          return;
+          return detail::len(beg, p) + 1;
         }
 
         if (detail::byte_is(*p, ' ')) {
           // When there are at least one characters in '&' and ' ', trated
           // them as parameter name.
-          if (name_beg != p) {
-            name_ = detail::to_string(name_beg, p);
-            message_->params[name_] = "";
+          if (beg != p) {
+            inner_name_ = detail::to_string(beg, p);
+            message_->params.emplace(inner_name_, "");
           }
-          inner_parsed_len_ += detail::len(name_beg, p);
           param_state_ = param_state::completed;
-          return;
+          return detail::len(beg, p);
         }
 
         if (!detail::is_uri_char(*p)) {
-          ec = error::bad_params;
-          return;
+          return net::unexpected(make_error_code(error::bad_params));
         }
       }
-      ec = error::need_more;
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9110:
      *               parameter-value = ( token / quoted-string )
      *               OWS             = *( SP / HTAB )
      *                               ; optional whitespace
     */
-    void parse_param_value(buffer& buf, error_code& ec) {
+    size_expected parse_param_value(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* uri_beg = buf.beg + buf.parsed_len;
-      const std::byte* value_beg = uri_beg + inner_parsed_len_;
-      for (const std::byte* p = value_beg; p < buf.end; ++p) {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+
+      for (const std::byte* p = beg; p < end; ++p) {
         if (detail::byte_is(*p, '&')) {
-          message_->params[name_] = detail::to_string(value_beg, p);
-          inner_parsed_len_ += detail::len(value_beg, p) + 1;
+          message_->params.emplace(inner_name_, detail::to_string(beg, p));
           param_state_ = param_state::name;
-          return;
+          return detail::len(beg, p) + 1;
         }
 
         if (detail::byte_is(*p, ' ')) {
-          message_->params[name_] = detail::to_string(value_beg, p);
-          inner_parsed_len_ += detail::len(value_beg, p);
+          message_->params.emplace(inner_name_, detail::to_string(beg, p));
           param_state_ = param_state::completed;
-          return;
+          return detail::len(beg, p);
         }
 
         if (!detail::is_uri_char(*p)) {
-          ec = error::bad_params;
-          return;
+          return net::unexpected(make_error_code(error::bad_params));
         }
       }
-      ec = error::need_more;
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
+     * @brief Parse http request parameters.
      * @details According to RFC 9110:
      *               parameters      = *( OWS ";" OWS [ parameter ] )
      *               parameter       = parameter-name "=" parameter-value
-     * @brief Parse http request parameters.
-     * @see parameters:
-     *           https://datatracker.ietf.org/doc/html/rfc9110#name-parameters
-     * @see quoted-string:
-     *           https://datatracker.ietf.org/doc/html/rfc9110#name-quoted-strings
-     * @see parse query parameter
-     *           https://url.spec.whatwg.org/#query-state
     */
-    void parse_params(buffer& buf, error_code& ec) {
+    size_expected parse_params(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      param_state_ = param_state::name;
-      while (ec == std::errc{}) {
+      size_expected result = 0;
+      std::size_t total_parsed_len = 0;
+
+      while (true) {
         switch (param_state_) {
         case param_state::name: {
-          parse_param_name(buf, ec);
+          result = parse_param_name(buf);
           break;
         }
         case param_state::value: {
-          parse_param_value(buf, ec);
+          result = parse_param_value(buf);
           break;
         }
         case param_state::completed: {
-          name_.clear();
+          inner_name_.clear();
           uri_state_ = uri_state::completed;
-          return;
+          return total_parsed_len;
         }
-        } // switch
-      }   // while
+        }
+        if (!result) {
+          return result;
+        }
+        update_length_and_buffer(*result, total_parsed_len, buf);
+      }
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details Parse whitespaces before http version. Multiply whitespaces are
      * allowd between uri and http version.
     */
-    void parse_spaces_before_version(buffer& buf, error_code& ec) {
+    size_expected parse_spaces_before_version(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* spaces_beg = buf.beg + buf.parsed_len;
-      const std::byte* p = detail::trim_front(spaces_beg, buf.end);
-      if (p == buf.end) [[unlikely]] {
-        ec = error::need_more;
-        return;
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+      const std::byte* p = detail::trim_front(beg, end);
+      if (p == end) [[unlikely]] {
+        return net::unexpected(make_error_code(error::need_more));
       }
-      buf.parsed_len += detail::len(spaces_beg, p);
       request_line_state_ = request_line_state::version;
+      return detail::len(beg, p);
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9112:
      *                 HTTP-version  = "HTTP" "/" DIGIT "." DIGIT
      * Parse http request version. HTTP's version number consists of two decimal
@@ -1097,39 +1042,36 @@ namespace net::http::http1 {
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-protocol-version
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-http-version
     */
-    void parse_request_http_version(buffer& buf, error_code& ec) {
+    size_expected parse_request_http_version(const_buffer buf) noexcept {
       static_assert(http1_request_concept<Message>);
-      const std::byte* version_beg = buf.beg + buf.parsed_len;
-      if (detail::len(version_beg, buf.end) < 10) {
-        ec = error::need_more;
-        return;
+      constexpr std::size_t version_length = 10;
+      if (buf.size() < version_length) {
+        return net::unexpected(make_error_code(error::need_more));
       }
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+
       if (
-        version_beg[0] != std::byte{'H'} ||  //
-        version_beg[1] != std::byte{'T'} ||  //
-        version_beg[2] != std::byte{'T'} ||  //
-        version_beg[3] != std::byte{'P'} ||  //
-        version_beg[4] != std::byte{'/'} ||  //
-        !detail::is_digit(version_beg[5]) || //
-        version_beg[6] != std::byte{'.'} ||  //
-        !detail::is_digit(version_beg[7]) || //
-        version_beg[8] != std::byte{'\r'} || //
-        version_beg[9] != std::byte{'\n'}) {
-        ec = error::bad_version;
-        return;
+        beg[0] != std::byte{'H'} ||  //
+        beg[1] != std::byte{'T'} ||  //
+        beg[2] != std::byte{'T'} ||  //
+        beg[3] != std::byte{'P'} ||  //
+        beg[4] != std::byte{'/'} ||  //
+        !detail::is_digit(beg[5]) || //
+        beg[6] != std::byte{'.'} ||  //
+        !detail::is_digit(beg[7]) || //
+        beg[8] != std::byte{'\r'} || //
+        beg[9] != std::byte{'\n'}) {
+        return net::unexpected(make_error_code(error::bad_version));
       }
 
-      auto version = to_http_version(
-        std::to_integer<int>(version_beg[5]), std::to_integer<int>(version_beg[7]));
-
-      message_->set_version(version);
-      buf.parsed_len += 10;
-      state_ = http1_parse_state::expecting_newline;
+      auto version = to_http_version(std::to_integer<int>(beg[5]), std::to_integer<int>(beg[7]));
+      message_->version = version;
+      request_line_state_ == request_line_state::completed;
+      return version_length;
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9112:
      *                   status-line = version SP status-code SP reason-phrase
      * Parse http status line. The first line of a response message is
@@ -1138,210 +1080,176 @@ namespace net::http::http1 {
      * describing the status code.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-status-line
     */
-    void parse_status_line(buffer& buf, error_code& ec) {
-      while (ec == std::errc{}) {
+    size_expected parse_status_line(const_buffer buf) noexcept {
+      size_expected result = 0;
+      std::size_t total_parsed_len = 0;
+      while (true) {
         switch (status_line_state_) {
         case status_line_state::version: {
-          parse_rsponse_http_version(buf, ec);
+          result = parse_rsponse_http_version(buf);
           break;
         }
         case status_line_state::status_code: {
-          parse_status_code(buf, ec);
+          result = parse_status_code(buf);
           break;
         }
         case status_line_state::reason: {
-          parse_reason(buf, ec);
-          return;
+          result = parse_reason(buf);
+          break;
+        }
+        case status_line_state::completed: {
+          state_ = http1_parse_state::expecting_newline;
+          return total_parsed_len;
         }
         }
+        if (!result) {
+          return result;
+        }
+        update_length_and_buffer(*result, total_parsed_len, buf);
       }
     }
 
     /*
-     * @param arg Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details Like @ref parse_request_http_version, but doesn't need CRLF. Instead,
      * this function needs SP to indicate version is received completed.
     */
-    void parse_rsponse_http_version(buffer& buf, error_code& ec) {
+    size_expected parse_rsponse_http_version(const_buffer buf) noexcept {
       static_assert(http1_response_concept<Message>);
-      const std::byte* version_beg = buf.beg + buf.parsed_len;
-      // HTTP-name + SP
-      if (detail::len(version_beg, buf.end) < 9) {
-        ec = error::need_more;
-        return;
+
+      // HTTP/1.1 + SP
+      constexpr std::size_t version_length = 9;
+      if (buf.size() < version_length) {
+        return net::unexpected(make_error_code(error::need_more));
       }
+
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
       if (
-        version_beg[0] != std::byte{'H'} ||  //
-        version_beg[1] != std::byte{'T'} ||  //
-        version_beg[2] != std::byte{'T'} ||  //
-        version_beg[3] != std::byte{'P'} ||  //
-        version_beg[4] != std::byte{'/'} ||  //
-        !detail::is_digit(version_beg[5]) || //
-        version_beg[6] != std::byte{'.'} ||  //
-        !detail::is_digit(version_beg[7]) || //
-        version_beg[8] != std::byte{' '}) {
-        ec = error::bad_version;
-        return;
+        beg[0] != std::byte{'H'} ||  //
+        beg[1] != std::byte{'T'} ||  //
+        beg[2] != std::byte{'T'} ||  //
+        beg[3] != std::byte{'P'} ||  //
+        beg[4] != std::byte{'/'} ||  //
+        !detail::is_digit(beg[5]) || //
+        beg[6] != std::byte{'.'} ||  //
+        !detail::is_digit(beg[7]) || //
+        beg[8] != std::byte{' '}) {
+        return net::unexpected(make_error_code(error::bad_version));
       }
 
       message_->version = to_http_version(
-        std::to_integer<int>(version_beg[5]), std::to_integer<int>(version_beg[7]));
-      buf.parsed_len += 9;
+        std::to_integer<int>(beg[5]), std::to_integer<int>(beg[7]));
       status_line_state_ = status_line_state::status_code;
+      return version_length;
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9112:
      *                   status-code = 3DIGIT
      * The status-code element is a 3-digit integer code describing the result of
      * the server's attempt to understand and satisfy the client's corresponding
      * request.
     */
-    void parse_status_code(buffer& buf, error_code& ec) {
+    size_expected parse_status_code(const_buffer buf) noexcept {
       static_assert(http1_response_concept<Message>);
-      const std::byte* status_code_beg = buf.beg + buf.parsed_len;
+
       // 3DIGIT + SP
-      if (detail::len(status_code_beg, buf.end) < 4) {
-        ec = error::need_more;
-        return;
+      constexpr std::size_t status_length = 4;
+      if (status_length < 4) {
+        return net::unexpected(make_error_code(error::need_more));
       }
-      if (!detail::byte_is(status_code_beg[3], ' ')) {
-        ec = error::bad_status;
-        return;
+
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+      if (!detail::byte_is(beg[3], ' ')) {
+        return net::unexpected(make_error_code(error::bad_status));
       }
-      message_->status_code = to_http_status_code(detail::to_string_view(status_code_beg, 3));
+      message_->status_code = to_http_status_code(detail::to_string_view(beg, 3));
       if (message_->status_code == http_status_code::unknown) {
-        ec = error::unknown_status;
-        return;
+        return net::unexpected(make_error_code(error::unknown_status));
       }
-      buf.parsed_len += 4;
       status_line_state_ = status_line_state::reason;
+      return status_length;
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9112:
      *               reason-phrase  = 1*( HTAB / SP / VCHAR)
-     *
      *   The reason-phrase element exists for the sole purpose of providing a
      * textual description associated with the numeric status code, mostly out of
      * deference to earlier Internet application protocols that were more
      * frequently used with interactive text clients.
     */
-    void parse_reason(buffer& buf, error_code& ec) {
+    size_expected parse_reason(const_buffer buf) noexcept {
       static_assert(http1_response_concept<Message>);
-      const std::byte* reason_beg = buf.beg + buf.parsed_len;
-      for (const std::byte* p = reason_beg; p < buf.end; ++p) {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+      for (const std::byte* p = beg; p < end; ++p) {
         if (!detail::byte_is(*p, '\r')) {
           continue;
         }
-
         if (!detail::byte_is(*(p + 1), '\n')) {
-          ec = error::bad_line_ending;
-          return;
+          return net::unexpected(make_error_code(error::bad_line_ending));
         }
-        message_->reason = {reason_beg, p};
 
-        // Skip the "\r\n"
-        buf.parsed_len += detail::len(reason_beg, p) + 2;
+        message_->reason = detail::to_string(beg, p);
         state_ = http1_parse_state::expecting_newline;
-        return;
+        return detail::len(beg, p) + 2;
       }
-      ec = error::need_more;
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details Parse a new line. If the new line just is "\r\n", it means that
      * all the headers have been parsed and the body can be parsed. Otherwise,
      * the line is still a header line.
     */
-    void parse_expecting_new_line(buffer& buf, error_code& ec) {
-      const std::byte* line_beg = buf.beg + buf.parsed_len;
-      if (detail::len(line_beg, buf.end) < 2) {
-        ec = error::need_more;
-        return;
+    size_expected parse_expecting_new_line(const_buffer buf) noexcept {
+      constexpr std::size_t line_ending_length = 2;
+      if (buf.size() < line_ending_length) {
+        return net::unexpected(make_error_code(error::need_more));
       }
-      if (detail::compare_2_char(line_beg, '\r', '\n')) {
-        // Received all headers, parse some special headers.
-        parse_special_headers(ec);
-        if (ec) {
-          return;
-        }
 
-
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+      if (detail::compare_2_char(beg, '\r', '\n')) {
         state_ = http1_parse_state::body;
-        buf.parsed_len += 2;
-        return;
+      } else {
+        state_ = http1_parse_state::header;
       }
-      state_ = http1_parse_state::header;
+      return line_ending_length;
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details: According to RFC 9110:
-     *                 header-name    = tokens
-     * Parse http header name. A header name labels the corresponding header value
-     * as having the semantics defined by that name. Header names are
-     * case-insensitive. In order to reduce the performance penalty, the library
-     * directly stores the header's lowercase mode, which makes it easier to use
-     * the case-insensitive mode. And the header name is not allowed to be empty.
-     * Any leading whitespace is aslo not allowed. Note that the header name maybe
-     * repeated. In this case, its combined header value consists of the list of
-     * corresponding header line values within that section, concatenated in
-     * order, with each header line value separated by a comma.
+     *                        header-name    = tokens
+     * Header names are case-insensitive. And the header name is not allowed to
+     * be empty. Any leading whitespace is aslo not allowed. Note that the
+     * header name maybe repeated. All duplicated header names are saved as-is
+     * and in order.
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-field-names
     */
-    void parse_header_name(buffer& buf, error_code& ec) {
-      const std::byte* name_beg = buf.beg + buf.parsed_len;
-      for (const std::byte* p = name_beg; p < buf.end; ++p) {
+    size_expected parse_header_name(const_buffer buf) noexcept {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+      for (const std::byte* p = beg; p < end; ++p) {
         if (detail::byte_is(*p, ':')) {
-          if (p == name_beg) [[unlikely]] {
-            ec = error::empty_header_name;
-            return;
+          if (p == beg) [[unlikely]] {
+            return net::unexpected(make_error_code(error::empty_header_name));
           }
 
-          // Header name is case-insensitive. Save header name in lowercase.
-          if (detail::len(name_beg, p) > name_.size()) {
-            name_.resize(p - name_beg);
-          }
-          std::transform(
-            reinterpret_cast<const char*>(name_beg),
-            reinterpret_cast<const char*>(p),
-            name_.begin(),
-            tolower);
-
-          inner_parsed_len_ += detail::len(name_beg, p) + 1;
+          inner_name_ = detail::to_string(beg, p);
           header_state_ = header_state::spaces_before_value;
-          return;
+          return detail::len(beg, p) + 1;
         }
         if (!detail::is_token(*p)) {
-          ec = error::bad_header_name;
-          return;
+          return net::unexpected(make_error_code(error::bad_header_name));
         }
       }
-      ec = error::need_more;
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     /*
-     * @brief When the header name is duplicated, some header names can simply use
-     * the last appeared value, while others can combine all the values into a
-     * list as the final value. This function returns whether the given parameter
-     * belongs to the second type of header.
-    */
-    static bool need_concat_header_value(std::string_view header_name) noexcept {
-      return header_name == "accept-encoding";
-    }
-
-    /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9110:
      *                field-value   = *field-content
      *                field-content = field-vchar
@@ -1349,16 +1257,15 @@ namespace net::http::http1 {
      *                field-vchar   = VCHAR / obs-text
      *                VCHAR         = any visible US-ASCII character
      *                obs-text      = %x80-FF
-     * Parse http header value. HTTP header value consist of a sequence of
-     * characters in a format defined by the field's grammar. A header value does
-     * not include leading or trailing whitespace. And it's not allowed to be
-     * empty. When the name is repeated, the value corresponding to the name is
-     * either the last value or a list of all values, separated by commas.
+     * HTTP header value consist of a sequence of characters in a format
+     * defined by the field's grammar. A header value does not include leading
+     * or trailing whitespace. And it's not allowed to be empty.
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-field-values
     */
-    void parse_header_value(buffer& buf, error_code& ec) {
-      const std::byte* value_beg = buf.beg + buf.parsed_len + inner_parsed_len_;
-      for (const std::byte* p = value_beg; p < buf.end; ++p) {
+    size_expected parse_header_value(const_buffer buf) noexcept {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+      for (const std::byte* p = beg; p < end; ++p) {
         // Focus only on '\r'.
         if (detail::byte_is(*p, '\r')) {
           continue;
@@ -1371,98 +1278,89 @@ namespace net::http::http1 {
         }
 
         // Empty header value.
-        if (whitespace == value_beg - 1) {
-          ec = error::empty_header_value;
-          return;
+        if (whitespace == beg - 1) {
+          return net::unexpected(make_error_code(error::empty_header_name));
         }
 
-        std::string value = detail::to_string(value_beg, whitespace + 1);
-
-        // Concat all header values in a list.
-        if (need_concat_header_value(name_) && message_->contain_header(name_)) {
-          message_->append_to_header(name_, "," + value);
-        } else {
-          message_->append_to_header(name_, value);
-        }
-        inner_parsed_len_ += detail::len(value_beg, p);
+        message_->headers.emplace(inner_name_, detail::to_string(beg, whitespace + 1));
+        inner_name_.clear();
         header_state_ = header_state::header_line_ending;
-        return;
+        return detail::len(beg, p);
       }
-      ec = error::need_more;
+      return net::unexpected(make_error_code(error::need_more));
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details Parse spaces between header name and header value.
     */
-    void parse_spaces_before_header_value(buffer& buf, error_code& ec) {
-      const std::byte* spaces_beg = buf.beg + buf.parsed_len + inner_parsed_len_;
-      const std::byte* p = detail::trim_front(spaces_beg, buf.end);
-      if (p == buf.end) {
-        ec = error::need_more;
-        return;
+    size_expected parse_spaces_before_header_value(const_buffer buf) noexcept {
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+      const std::byte* p = detail::trim_front(beg, end);
+      if (p == end) {
+        return net::unexpected(make_error_code(error::need_more));
       }
-      inner_parsed_len_ += detail::len(spaces_beg, p);
       header_state_ = header_state::value;
+      return detail::len(beg, p);
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
+     * @brief Parse http header line ending.
      * @details According to RFC 9110:
-     *            header line ending = "\r\n"
-     * Parse http header line ending.
+     *                       header line ending = "\r\n"
     */
-    void parse_header_line_ending(buffer& buf, error_code& ec) {
-      const std::byte* line_ending_beg = buf.beg + buf.parsed_len + inner_parsed_len_;
-      if (detail::len(line_ending_beg, buf.end) < 2) {
-        ec = error::need_more;
-        return;
-      }
-      if (!detail::compare_2_char(line_ending_beg, '\r', '\n')) {
-        ec = error::bad_line_ending;
-        return;
+    size_expected parse_header_line_ending(const_buffer buf) {
+      constexpr std::size_t line_ending_length = 2;
+      if (buf.size() < line_ending_length) {
+        return net::unexpected(make_error_code(error::need_more));
       }
 
-      buf.parsed_len += inner_parsed_len_ + 2;
-      name_.clear();
-      inner_parsed_len_ = 0;
-      header_state_ = header_state::name;
-      state_ = http1_parse_state::expecting_newline;
+      const auto* beg = buf.data();
+      const auto* end = buf.data() + buf.size();
+      if (!detail::compare_2_char(beg, '\r', '\n')) {
+        return net::unexpected(make_error_code(error::bad_line_ending));
+      }
+      header_state_ = header_state::completed;
+      return line_ending_length;
     }
 
-    void parse_special_headers(error_code& ec) {
-      parse_header_content_length(ec);
-      parse_header_connection(ec);
+    void_expected parse_special_headers() noexcept {
+      return parse_header_host()
+        .and_then([this] { return parse_header_content_length(); })
+        .and_then([this] { return parse_header_connection(); });
     }
 
-    void parse_header_connection(error_code& ec) {
-      // TODO: impl
+    void_expected parse_header_connection() noexcept {
+      return {};
     }
 
-    void parse_header_content_length(error_code& ec) {
-      auto len_str = message_->header_value("content-length");
-      if (!len_str.has_value()) {
-        message_->set_content_length(0);
-        return;
+    void_expected parse_header_host() noexcept {
+      return {};
+    }
+
+    void_expected parse_header_content_length() noexcept {
+      auto range = message_->heades.equal_range(http_header_content_length);
+      auto header_cnt = std::distance(range.first, range.second);
+      if (header_cnt > 1) {
+        return net::unexpected(make_error_code(error::multiple_content_length));
+      }
+      if (header_cnt == 0) {
+        message_->content_length = 0;
+        return {};
       }
 
       std::size_t len = 0;
       auto [_, res] = std::from_chars(
-        len_str.value().data(), //
-        len_str.value().data() + len_str.value().size(),
+        range.first->data(), //
+        range.first->data() + range.first->size(),
         len);
-      if (res == std::errc()) {
-        message_->set_content_length(len);
-      } else {
-        ec = error::bad_content_length;
+      if (res != std::errc()) {
+        return net::unexpected(make_error_code(error::bad_content_length));
       }
+      message_->content_length = len;
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details Parse http headers. HTTP headers let the client and the server
      * pass additional information with an HTTP request or response. An HTTP
      * header consists of it's case-insensitive name followed by a colon (:), then
@@ -1471,57 +1369,67 @@ namespace net::http::http1 {
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-fields
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-field-syntax
     */
-    void parse_header(buffer& buf, error_code& ec) {
-      inner_parsed_len_ = 0;
+    size_expected parse_header(const_buffer buf) noexcept {
+      size_expected result = 0;
+      std::size_t total_parsed_len = 0;
+
       header_state_ = header_state::name;
-      while (ec == std::errc{}) {
+      while (true) {
         switch (header_state_) {
         case header_state::name: {
-          parse_header_name(buf, ec);
+          result = parse_header_name(buf);
           break;
         }
         case header_state::spaces_before_value: {
-          parse_spaces_before_header_value(buf, ec);
+          result = parse_spaces_before_header_value(buf);
           break;
         }
         case header_state::value: {
-          parse_header_value(buf, ec);
+          result = parse_header_value(buf);
           break;
         }
         case header_state::header_line_ending: {
-          parse_header_line_ending(buf, ec);
-          return;
+          result = parse_header_line_ending(buf);
+          break;
         }
-        } // switch
-      }   // while
+        case header_state::completed: {
+          state_ = http1_parse_state::expecting_newline;
+        }
+        }
+        if (!result) {
+          return result;
+        }
+        update_length_and_buffer(*result, total_parsed_len, buf);
+      }
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
      * @details According to RFC 9110:
      *                  message-body = *OCTET
      *                         OCTET =  any 8-bit sequence of data
-     *   The message body (if any) of an HTTP/1.1 message is used to carry
-     *   content for the request or response.
+     *   The message body (if any) of an HTTP message is used to carry content
+     *   for the request or response.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-message-body
      * @todo Currently this library only deal with Content-Length case.
     */
-    void parse_body(buffer& buf, error_code& ec) {
-      if (message_->content_length() == 0) {
+    size_expected parse_body(const_buffer buf) noexcept {
+      if (message_->content_length == 0) {
         state_ = http1_parse_state::completed;
-        return;
+        return 0;
       }
-      const std::byte* body_beg = buf.beg + buf.parsed_len;
-      if (detail::len(body_beg, buf.end) < message_->content_length) {
-        ec = error::need_more;
-        return;
+      if (buf.size() < message_->content_length) {
+        return net::unexpected(make_error_code(error::need_more));
       }
-      message_->set_body(detail::to_string(body_beg, message_->content_length()));
-      buf.parsed_len += message_->content_length;
+      if (buf.size() > message_->content_length) {
+        return net::unexpected(make_error_code(error::body_size_bigger_than_content_length));
+      }
+
+      message_->body = detail::to_string(buf.data(), message_->content_length);
       state_ = http1_parse_state::completed;
+      return message_->content_length;
     }
 
+    // Parse states.
     http1_parse_state state_ = http1_parse_state::nothing_yet;
     request_line_state request_line_state_ = request_line_state::method;
     status_line_state status_line_state_ = status_line_state::version;
@@ -1529,17 +1437,9 @@ namespace net::http::http1 {
     param_state param_state_ = param_state::name;
     header_state header_state_ = header_state::name;
 
-    // Records the length of the buffer currently parsed, used for URI and headers
-    // only. Both the URI and header contain multiple subparts, different
-    // subparts are parsed by different parsing functions. When parsing a subpart,
-    // we cannot update the parsed_len of the buffer directly, because we do
-    // not know whether the URI or header can be successfully parsed in the end.
-    // However, the subsequent function needs to know the location of the buffer
-    // that the previous function  parsed, which is recorded by this variable.
-    std::size_t inner_parsed_len_{0};
-
-
-    std::string name_;
+    // Used by header name and parameter name. Name and value are parsed in two
+    // functions, save name to be later used in value parse functions.
+    std::string inner_name_;
 
     // The message to be filled.
     std::unique_ptr<Message> message_ = nullptr;

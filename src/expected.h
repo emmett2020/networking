@@ -17,8 +17,8 @@
 #pragma once
 
 #include <error.h>
-#include <exception>
 #include <system_error>
+#include <string>
 
 #include <tl/expected.hpp>
 
@@ -27,4 +27,6 @@ namespace net {
   using tl::unexpected;
 
   using size_expected = tl::expected<std::size_t, std::error_code>;
+  using void_expected = tl::expected<void, std::error_code>;
+  using string_expected = tl::expected<std::string, std::error_code>;
 }

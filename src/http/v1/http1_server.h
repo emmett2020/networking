@@ -35,6 +35,8 @@
 #include <exec/timed_scheduler.hpp>
 #include <exec/repeat_effect_until.hpp>
 
+#include "expected.h"
+#include "http/v1/http1_request.h"
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
 #include "utils/flat_buffer.h"
@@ -49,7 +51,7 @@ namespace ex {
   using namespace exec;    // NOLINT
 }
 
-namespace net::http1 {
+namespace net::http::http1 {
   struct send_state {
     std::string start_line_and_headers;
     http1::response response;
@@ -63,23 +65,23 @@ namespace net::http1 {
       Request request{};
       message_parser<Request> parser{&request};
       util::flat_buffer<8192> buffer{};
-      Request::duration remaining_time{0};
+      Request::duration_t remaining_time{0};
     };
 
     // Get detailed error enum by message parser state.
-    inline http1::error detailed_error(parse_state s) noexcept {
+    inline http::error detailed_error(http1_parse_state s) noexcept {
       switch (s) {
-      case parse_state::nothing_yet:
-        return http1::error::recv_request_timeout_with_nothing;
-      case parse_state::start_line:
-      case parse_state::expecting_newline:
-        return http1::error::recv_request_line_timeout;
-      case parse_state::header:
-        return http1::error::recv_request_headers_timeout;
-      case parse_state::body:
-        return http1::error::recv_request_body_timeout;
-      case parse_state::completed:
-        return http1::error::success;
+      case http1_parse_state::nothing_yet:
+        return error::recv_request_timeout_with_nothing;
+      case http1_parse_state::start_line:
+      case http1_parse_state::expecting_newline:
+        return error::recv_request_line_timeout;
+      case http1_parse_state::header:
+        return error::recv_request_headers_timeout;
+      case http1_parse_state::body:
+        return error::recv_request_body_timeout;
+      case http1_parse_state::completed:
+        return error::success;
       }
     }
 
@@ -89,7 +91,7 @@ namespace net::http1 {
       return ex::if_then_else(
         sz != 0, //
         ex::just(sz),
-        ex::just_error(http1::error::end_of_stream));
+        ex::just_error(error::end_of_stream));
     };
 
     // Initialize state
@@ -105,14 +107,14 @@ namespace net::http1 {
 
     // recv_request is an customization point object which we names cpo.
     struct recv_request_t {
-      template <http1_socket Socket, http1_request Request>
+      template <http1_socket_concept Socket, http1_request_concept Request>
       stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
         // Type tratis.
-        using timepoint = Request::timepoint;
-        using recv_state = recv_state<Request>;
+        using timepoint_t = Request::timepoint_t;
+        using recv_state_t = recv_state<Request>;
 
-        return ex::just(recv_state{.request = req}) //
-             | ex::let_value([&](recv_state& state) {
+        return ex::just(recv_state_t{.request = req}) //
+             | ex::let_value([&](recv_state_t& state) {
                  // Update necessary information once receive operation completed.
                  auto update_state = [&state](auto start, auto stop, std::size_t recv_size) {
                    state.buffer.commit(recv_size);
@@ -136,7 +138,7 @@ namespace net::http1 {
                    std::error_code ec{};
                    std::size_t parsed_size = state.parser.parse(state.buffer.rbuffer(), ec);
                    if (ec != std::errc{}) {
-                     if (ec == http1::error::need_more) {
+                     if (ec == error::need_more) {
                        state.buffer.consume(parsed_size);
                        state.buffer.prepare();
                        return variant_t(ex::just(false));
@@ -180,12 +182,12 @@ namespace net::http1 {
   namespace _create_response {
     struct create_response_t {
       ex::sender auto operator()(send_state& state) const {
-        std::optional<std::string> response_str = state.response.make_response_string();
+        string_expected response_str = state.response.to_string();
         if (response_str.has_value()) {
           state.start_line_and_headers = std::move(*response_str);
         }
         return ex::if_then_else(
-          response_str.has_value(), ex::just(), ex::just_error(http1::error::invalid_response));
+          response_str.has_value(), ex::just(), ex::just_error(error::invalid_response));
       }
     };
   } // namespace _create_response
@@ -193,12 +195,12 @@ namespace net::http1 {
   inline constexpr _create_response::create_response_t create_response{};
 
   namespace _start_server {
-    template <http1_request Request>
+    template <http1_request_concept Request>
     bool need_keepalive(const Request& request) noexcept {
-      if (request.ContainsHeader(http1::http_header_connection)) {
+      if (request.ContainsHeader(http_header_connection)) {
         return true;
       }
-      if (request.Version() == http1::http_version::http11) {
+      if (request.Version() == http_version::http11) {
         return true;
       }
       return false;
@@ -239,7 +241,7 @@ namespace net::http1 {
     // A http server.
     struct server {
       using context_type = ex::io_uring_context;
-      using request_type = client_request;
+      using request_type = http1_client_request;
       using response_type = response;
       using acceptor_handle_type = sio::io_uring::acceptor_handle<sio::ip::tcp>;
       using acceptor_type = sio::io_uring::acceptor<sio::ip::tcp>;
@@ -265,7 +267,7 @@ namespace net::http1 {
     };
 
     struct start_server_t {
-      template <http1_server Server>
+      template <http1_server_concept Server>
       void operator()(Server& server) const noexcept {
         // TODO: some checks must be applied here in the future.
         // e.g. check whether context is able to handle net IO.
@@ -294,7 +296,7 @@ namespace net::http1 {
   inline constexpr _start_server::start_server_t start_server{};
   using _start_server::server;
 
-} // namespace net::http1
+} // namespace net::http::http1
 
 /*
  * template<net::server Server>
