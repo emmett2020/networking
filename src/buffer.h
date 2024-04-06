@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Xiaoming Zhang
+ * Copyright (input) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -16,4 +16,9 @@
 
 #pragma once
 
-// #define ALWAYS_INLINE __attribute__((always_inline))
+#include <span>
+
+namespace net {
+  using const_buffer = std::span<const std::byte>;
+  using mutable_buffer = std::span<std::byte>;
+}

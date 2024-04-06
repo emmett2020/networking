@@ -27,22 +27,25 @@ add_subdirectory(${THIRDPARTIES_PATH}/stdexec)
 # TODO: rework senders-io's cmakelist.txt
 set(stdexec_DIR ${CMAKE_SOURCE_DIR}/build/thirdparties/stdexec/)
 
+
 add_subdirectory(${THIRDPARTIES_PATH}/senders-io)
 add_subdirectory(${THIRDPARTIES_PATH}/fmt)
 add_subdirectory(${THIRDPARTIES_PATH}/nlohmann-json)
 add_subdirectory(${THIRDPARTIES_PATH}/spdlog)
 add_subdirectory(${THIRDPARTIES_PATH}/magic_enum)
+add_subdirectory(${THIRDPARTIES_PATH}/expected)
 
 # find source files
 file (GLOB_RECURSE SOURCE_LIST ${SOURCE_PATH}/*.cpp)
 add_executable(${PROJECT_NAME} ${SOURCE_LIST} main.cpp)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC STDEXEC::stdexec 
-                                             sio::sio 
+target_link_libraries(${PROJECT_NAME} PUBLIC STDEXEC::stdexec
+                                             sio::sio
                                              fmt::fmt
                                              nlohmann_json::nlohmann_json
                                              spdlog::spdlog
-                                             magic_enum::magic_enum)
+                                             magic_enum::magic_enum
+                                             tl::expected)
 
 option(BUILD_NETWORKING_TEST "build networking test" OFF)
 if (BUILD_NETWORKING_TEST)

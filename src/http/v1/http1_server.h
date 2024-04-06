@@ -38,11 +38,11 @@
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
 #include "utils/flat_buffer.h"
-#include "http1/http1_common.h"
-#include "http1/http1_error.h"
-#include "http1/http1_message_parser.h"
-#include "http1/http1_response.h"
-#include "http1/http1_concept.h"
+#include "http/http_common.h"
+#include "http/http_error.h"
+#include "http/v1/http1_message_parser.h"
+#include "http/v1/http1_response.h"
+#include "http/http_concept.h"
 
 namespace ex {
   using namespace stdexec; // NOLINT

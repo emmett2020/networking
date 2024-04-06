@@ -24,9 +24,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "http1/http1_common.h"
+#include "http/http_common.h"
 
-namespace net::http1 {
+namespace net::http::http1 {
 
   struct response {
     http_version version() const noexcept {

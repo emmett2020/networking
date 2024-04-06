@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Xiaoming Zhang
+ * Copyright (input) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -16,4 +16,15 @@
 
 #pragma once
 
-// #define ALWAYS_INLINE __attribute__((always_inline))
+#include <error.h>
+#include <exception>
+#include <system_error>
+
+#include <tl/expected.hpp>
+
+namespace net {
+  using tl::expected;
+  using tl::unexpected;
+
+  using size_expected = tl::expected<std::size_t, std::error_code>;
+}

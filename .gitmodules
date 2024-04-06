@@ -20,3 +20,6 @@
 	path = thirdparties/stdexec
 	url = git@github.com:villevoutilainen/wg21_p2300_std_execution.git
 	branch = member-only-customization-points
+[submodule "thirdparties/expected"]
+	path = thirdparties/expected
+	url = https://github.com/TartanLlama/expected.git

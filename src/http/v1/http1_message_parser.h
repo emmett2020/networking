@@ -29,10 +29,12 @@
 
 #include <fmt/core.h>
 
+#include "expected.h"
+#include "buffer.h"
 #include "http/http_common.h"
 #include "http/http_concept.h"
 #include "http/http_error.h"
-#include "http/http1/http1_request.h"
+#include "http/v1/http1_request.h"
 
 // TODO: Refactor all documents. Refine some comments.
 // TODO: Still need to implement and optimize this parser. Write more
@@ -329,12 +331,12 @@ namespace net::http::http1 {
    * complete and properly formed message. This enum describes the current
    * parsed status.
    * Specifically,
-   *     - nothing_yet        indicates that no data has been parsed by the current parser.
-   *     - start_line         indicates that the first line of the message is currently being parsed.
-   *     - expecting_new_line indicates that a new line is required. The new line must be a  header or "\r\n".
-   *     - header             indicates that the message field is currently being parsed.
-   *     - body               indicates that the message content is currently being parsed.
-   *     - completed          indicates that the parsing is complete and a correctly formatted message is generated.
+   *    - nothing_yet        no data has been parsed by the current parser.
+   *    - start_line         parsing the first line of the message.
+   *    - expecting_new_line a new line is required. The new line must be a header or "\r\n".
+   *    - header             parsing the message field.
+   *    - body               parsing that the message content.
+   *    - completed          parsing is completed, a correctly formatted message is generated.
   */
   enum class http1_parse_state {
     nothing_yet,
@@ -418,10 +420,8 @@ namespace net::http::http1 {
       return message_;
     }
 
-    std::size_t parse(std::span<const std::byte> data, error_code& ec) {
-      assert(
-        ec == std::errc{}
-        && "net::http::http1::message_parser::parse() failed. The parameter ec should be cleared.");
+    size_expected parse(std::span<const std::byte> data) {
+      std::error_code ec{};
 
       buffer buf{
         .beg = data.data(),
@@ -548,8 +548,7 @@ namespace net::http::http1 {
     }
 
     /*
-     * @param buf Records information about the currently parsed buffer.
-     * @param ec The error code which holds detailed failure reason.
+     * @param buf buffer to be parsed
      * @details According to RFC 9112:
      *                        method = token
      * The method token is case-sensitive. By convention, standardized methods
@@ -559,11 +558,12 @@ namespace net::http::http1 {
      * method to spaces_before_uri.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-method
     */
-    void parse_method(buffer& buf, error_code& ec) {
+    size_expected parse_method(const_buffer buf) {
       static_assert(http1_request_concept<Message>);
-      const std::byte* method_beg = buf.beg + buf.parsed_len;
+      const std::byte* method_beg = buf.data();
+      const std::byte* buffer_end = buf.data() + buf.size();
 
-      for (const std::byte* p = method_beg; p < buf.end; ++p) {
+      for (const std::byte* p = method_beg; p < buffer_end; ++p) {
         // Collect method string until met first non-method charater.
         if (detail::is_token(*p)) [[likely]] {
           continue;
@@ -571,29 +571,62 @@ namespace net::http::http1 {
 
         // The first character after method string must be whitespace.
         if (*p != std::byte{' '}) {
-          ec = error::bad_method;
-          return;
+          return net::unexpected(make_error_code(error::bad_method));
         }
 
         // Empty method is not allowed.
         if (p == method_beg) {
-          ec = error::empty_method;
-          return;
+          return net::unexpected(make_error_code(error::empty_method));
         }
 
         http_method method = detail::to_http_method(method_beg, p);
         if (method == http_method::unknown) {
-          ec = error::unknown_method;
-          return;
+          return net::unexpected(make_error_code(error::unknown_method));
         }
 
         message_->set_method(method);
-        buf.parsed_len += p - method_beg;
         request_line_state_ = request_line_state::spaces_before_uri;
-        return;
+        return p - method_beg;
       }
-      ec = error::need_more;
+
+      return net::unexpected(make_error_code(error::need_more));
     }
+
+    // void parse_method(buffer& buf, error_code& ec) {
+    //   static_assert(http1_request_concept<Message>);
+    //   const std::byte* method_beg = buf.beg + buf.parsed_len;
+    //
+    //   for (const std::byte* p = method_beg; p < buf.end; ++p) {
+    //     // Collect method string until met first non-method charater.
+    //     if (detail::is_token(*p)) [[likely]] {
+    //       continue;
+    //     }
+    //
+    //     // The first character after method string must be whitespace.
+    //     if (*p != std::byte{' '}) {
+    //       ec = error::bad_method;
+    //       return;
+    //     }
+    //
+    //     // Empty method is not allowed.
+    //     if (p == method_beg) {
+    //       ec = error::empty_method;
+    //       return;
+    //     }
+    //
+    //     http_method method = detail::to_http_method(method_beg, p);
+    //     if (method == http_method::unknown) {
+    //       ec = error::unknown_method;
+    //       return;
+    //     }
+    //
+    //     message_->set_method(method);
+    //     buf.parsed_len += p - method_beg;
+    //     request_line_state_ = request_line_state::spaces_before_uri;
+    //     return;
+    //   }
+    //   ec = error::need_more;
+    // }
 
     /*
      * @param buf Records information about the currently parsed buffer.

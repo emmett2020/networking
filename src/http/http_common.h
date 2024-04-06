@@ -12,7 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-*/
+ */
 
 #pragma once
 
@@ -23,7 +23,6 @@
 #include <charconv>
 #include <string>
 #include <string_view>
-
 #include <magic_enum.hpp>
 
 namespace net::http {
@@ -436,7 +435,7 @@ namespace net::http {
   }
 
   /// @brief Convert given string to http status code enum.
-  constexpr http_status_code to_http_status_code(std::string_view status) noexcept {
+  inline http_status_code to_http_status_code(std::string_view status) noexcept {
     int value = 0;
     auto [ptr, ec] = std::from_chars(status.data(), status.data() + status.size(), value);
     if (ec != std::errc()) {
@@ -504,6 +503,9 @@ namespace net::http {
     }
     return 0;
   }
+
+  // HTTP port type.
+  using port_t = std::uint16_t;
 
 
 } // namespace net::http
