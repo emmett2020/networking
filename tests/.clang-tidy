@@ -1,0 +1,4 @@
+# Catch2 not meet this requirements.
+Checks: '
+  -misc-use-anonymous-namespace
+'

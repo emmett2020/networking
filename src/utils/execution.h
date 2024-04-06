@@ -12,24 +12,30 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
-#include <fmt/format.h>
-#include <iostream>
+*/
+
+#pragma once
+
+// stdexec
 #include <stdexec/execution.hpp>
 
-#include "http/v1/http1_message_parser.h"
+// exec
+#include <exec/variant_sender.hpp>
+#include <exec/linux/io_uring_context.hpp>
+#include <exec/repeat_effect_until.hpp>
+#include <exec/when_any.hpp>
+#include "exec/timed_scheduler.hpp"
 
-// #include "http1/http_server.h"
+// sio
+#include <sio/io_uring/socket_handle.hpp>
+#include <sio/ip/endpoint.hpp>
+#include <sio/ip/tcp.hpp>
+#include <sio/sequence/ignore_all.hpp>
+#include <sio/sequence/let_value_each.hpp>
+#include <sio/io_concepts.hpp>
+#include <sio/ip/address.hpp>
 
-using namespace std; // NOLINT
-
-int main() {
-  // net::http1::server server{"127.0.0.1", 1280};
-  // net::http1::start_server(server);
-
-  std::cout << "hello world\n";
-  std::cout << "you can find me by xiaomingZhang2020@outlook.com\n";
-  std::string s;
-
-  return 0;
-}
+namespace ex {
+  using namespace stdexec; // NOLINT
+  using namespace exec;    // NOLINT
+};

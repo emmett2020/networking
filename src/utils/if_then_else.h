@@ -13,23 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <fmt/format.h>
-#include <iostream>
+
+#pragma once
+
 #include <stdexec/execution.hpp>
+#include <exec/variant_sender.hpp>
 
-#include "http/v1/http1_message_parser.h"
-
-// #include "http1/http_server.h"
-
-using namespace std; // NOLINT
-
-int main() {
-  // net::http1::server server{"127.0.0.1", 1280};
-  // net::http1::start_server(server);
-
-  std::cout << "hello world\n";
-  std::cout << "you can find me by xiaomingZhang2020@outlook.com\n";
-  std::string s;
-
-  return 0;
+namespace ex {
+  template <class ThenSender, class ElseSender>
+  exec::variant_sender<ThenSender, ElseSender>
+    if_then_else(bool condition, ThenSender then, ElseSender otherwise) { // NOLINT
+    if (condition) {
+      return then;
+    }
+    return otherwise;
+  }
 }
