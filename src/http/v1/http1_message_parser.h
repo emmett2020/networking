@@ -16,11 +16,11 @@
 
 #pragma once
 
-#include <strings.h>
+#include <cstring>
 #include <charconv>
 #include <cstddef>
+#include <iterator>
 #include <limits>
-#include <span>
 #include <string>
 #include <system_error>
 #include <memory>
@@ -390,6 +390,10 @@ namespace net::http::http1 {
   template <http1_message_concept Message>
   class message_parser {
     using error_code = std::error_code;
+    using byte_t = std::byte;
+    using cbyte_t = const std::byte;
+    using pointer = byte_t*;
+    using cpointer = const byte_t*;
 
    public:
     explicit message_parser(std::unique_ptr<Message> message) noexcept
@@ -414,46 +418,50 @@ namespace net::http::http1 {
       return message_;
     }
 
-    size_expected parse(std::span<const std::byte> data) {
-      std::error_code ec{};
+    [[nodiscard]] bool is_completed() const noexcept {
+      return state_ == http1_parse_state::completed;
+    }
 
-      buffer buf{
-        .beg = data.data(),
-        .end = data.data() + data.size(),
-        .parsed_len = 0,
-      };
-
-      while (ec == std::errc{}) {
+    size_expected parse(const_buffer buffer) noexcept {
+      cpointer beg = buffer.data();
+      cpointer end = buffer.data() + buffer.size();
+      cpointer p = beg;
+      size_expected result = 0;
+      while (true) {
         switch (state_) {
         case http1_parse_state::nothing_yet:
         case http1_parse_state::start_line: {
           if constexpr (http1_request_concept<Message>) {
-            parse_request_line(buf, ec);
+            result = parse_request_line(p, end);
           } else {
-            parse_status_line(buf, ec);
+            result = parse_status_line(p, end);
           }
           break;
         }
         case http1_parse_state::expecting_newline: {
-          parse_expecting_new_line(buf, ec);
+          result = parse_expecting_new_line(p, end);
           break;
         }
         case http1_parse_state::header: {
-          parse_header(buf, ec);
+          result = parse_header(p, end);
           break;
         }
         case http1_parse_state::body: {
-          parse_body(buf, ec);
+          result = parse_body(p, end);
           break;
         }
         case http1_parse_state::completed: {
-          return buf.parsed_len;
+          return detail::len(beg, p);
         }
         }
+        if (!result) {
+          if (result.error() == error::need_more) {
+            return detail::len(beg, p);
+          }
+          return result;
+        }
+        p += *result;
       }
-
-      // If fatal error occurs, return zero as parsed size.
-      return ec == error::need_more ? buf.parsed_len : 0;
     }
 
     [[nodiscard]] http1_parse_state state() const noexcept {
@@ -461,12 +469,6 @@ namespace net::http::http1 {
     }
 
    private:
-    struct buffer {
-      const std::byte* beg = nullptr;
-      const std::byte* end = nullptr;
-      std::size_t parsed_len = 0;
-    };
-
     enum class request_line_state {
       method,
       spaces_before_uri,
@@ -523,40 +525,41 @@ namespace net::http::http1 {
      * protocol version.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-line
     */
-    size_expected parse_request_line(const_buffer buf) noexcept {
-      std::size_t total_parsed_len = 0;
-      size_expected result = 0;
+    size_expected parse_request_line(cpointer beg, cpointer end) noexcept {
+      size_expected result{};
+      cpointer cur = beg;
+
       while (true) {
         switch (request_line_state_) {
         case request_line_state::method: {
-          result = parse_method(buf);
+          result = parse_method(cur, end);
           break;
         }
         case request_line_state::spaces_before_uri: {
-          result = parse_spaces_before_uri(buf);
+          result = parse_spaces_before_uri(cur, end);
           break;
         }
         case request_line_state::uri: {
-          result = parse_uri(buf);
+          result = parse_uri(cur, end);
           break;
         }
         case request_line_state::spaces_before_http_version: {
-          result = parse_spaces_before_version(buf);
+          result = parse_spaces_before_version(cur, end);
           break;
         }
         case request_line_state::version: {
-          result = parse_request_http_version(buf);
+          result = parse_request_http_version(cur, end);
           break;
         }
         case request_line_state::completed: {
           state_ = http1_parse_state::expecting_newline;
-          return total_parsed_len;
+          return detail::len(beg, cur);
         }
         }
         if (!result) {
           return result;
         }
-        update_length_and_buffer(*result, total_parsed_len, buf);
+        cur += *result;
       }
     }
 
@@ -570,53 +573,45 @@ namespace net::http::http1 {
      * method to spaces_before_uri.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-method
      */
-    size_expected parse_method(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const std::byte* method_beg = buf.data();
-      const std::byte* buffer_end = buf.data() + buf.size();
-
-      for (const std::byte* p = method_beg; p < buffer_end; ++p) {
+    size_expected parse_method(cpointer beg, cpointer end) noexcept {
+      for (cpointer p = beg; p < end; ++p) {
         // Collect method string until met first non-method charater.
         if (detail::is_token(*p)) [[likely]] {
           continue;
         }
 
         // The first character after method string must be whitespace.
-        if (*p != std::byte{' '}) {
+        if (detail::byte_is(*p, ' ')) {
           return net::unexpected(make_error_code(error::bad_method));
         }
 
         // Empty method is not allowed.
-        if (p == method_beg) {
+        if (p == beg) {
           return net::unexpected(make_error_code(error::empty_method));
         }
 
-        http_method method = detail::to_http_method(method_beg, p);
+        http_method method = detail::to_http_method(beg, p);
         if (method == http_method::unknown) {
           return net::unexpected(make_error_code(error::unknown_method));
         }
 
-        message_->set_method(method);
+        message_->method = method;
         request_line_state_ = request_line_state::spaces_before_uri;
-        return p - method_beg;
+        return detail::len(beg, p);
       }
-
       return net::unexpected(make_error_code(error::need_more));
     }
 
     /**
      * @details Parse multiple whitespaces between method and URI.
      */
-    size_expected parse_spaces_before_uri(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const std::byte* beg = buf.data();
-      const std::byte* end = buf.data() + buf.size();
-      const std::byte* p = detail::trim_front(beg, end);
+    size_expected parse_spaces_before_uri(cpointer beg, cpointer end) noexcept {
+      cpointer p = detail::trim_front(beg, end);
       if (p == end) [[unlikely]] {
         return net::unexpected(make_error_code(error::need_more));
       }
       request_line_state_ = request_line_state::uri;
-      return p - beg;
+      return detail::len(beg, p);
     }
 
     // TODO: Add percent-encoded.
@@ -632,15 +627,14 @@ namespace net::http::http1 {
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-target
      * @see https://url.spec.whatwg.org
     */
-    size_expected parse_uri(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const std::byte* beg = buf.data();
-      const std::byte* end = buf.data() + buf.size();
+    size_expected parse_uri(cpointer beg, cpointer end) noexcept {
       if (beg >= end) {
         return net::unexpected(make_error_code(error::need_more));
       }
+
+      std::size_t parsed_size = 0;
       size_expected result = 0;
-      std::size_t total_parsed_len = 0;
+      cpointer p = beg;
 
       uri_state_ = uri_state::initial;
       while (true) {
@@ -655,35 +649,36 @@ namespace net::http::http1 {
           break;
         }
         case uri_state::scheme: {
-          result = parse_scheme(buf);
+          result = parse_scheme(p, end);
           break;
         }
         case uri_state::host: {
-          result = parse_host(buf);
+          result = parse_host(p, end);
           break;
         }
         case uri_state::port: {
-          result = parse_port(buf);
+          result = parse_port(p, end);
           break;
         }
         case uri_state::path: {
-          result = parse_path(buf);
+          result = parse_path(p, end);
           break;
         }
         case uri_state::params: {
-          result = parse_params(buf);
+          result = parse_params(p, end);
           break;
         }
         case uri_state::completed: {
           request_line_state_ = request_line_state::spaces_before_http_version;
-          message_->uri = detail::to_string(beg, total_parsed_len);
-          return total_parsed_len;
+          message_->uri = detail::to_string(beg, parsed_size);
+          return parsed_size;
         }
         } // switch
         if (!result) {
           return result;
         }
-        update_length_and_buffer(*result, total_parsed_len, buf);
+        parsed_size += *result;
+        p += *result;
       }
     }
 
@@ -696,11 +691,7 @@ namespace net::http::http1 {
      * scheme field will be filled.
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
     */
-    size_expected parse_scheme(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
-
+    size_expected parse_scheme(cpointer beg, cpointer end) noexcept {
       for (const std::byte* p = beg; p < end; ++p) {
         // Skip the scheme character to find first colon.
         if (detail::is_alnum(*p) || detail::one_of(*p, '+', '-', '.')) {
@@ -729,7 +720,6 @@ namespace net::http::http1 {
         uri_state_ = uri_state::host;
         return scheme_len + 3;
       }
-
       return net::unexpected(make_error_code(error::need_more));
     }
 
@@ -746,11 +736,7 @@ namespace net::http::http1 {
      * https://datatracker.ietf.org/doc/html/rfc9110#name-authoritative-access
      * https://datatracker.ietf.org/doc/html/rfc9110#name-http-uri-scheme
     */
-    size_expected parse_host(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
-
+    size_expected parse_host(cpointer beg, cpointer end) noexcept {
       for (const auto* p = beg; p < end; ++p) {
         // Collect host string until met first non-host charater.
         if (detail::is_alnum(*p) || detail::one_of(*p, '-', '.')) {
@@ -792,6 +778,7 @@ namespace net::http::http1 {
           return host_len;
         }
       }
+
       return net::unexpected(make_error_code(error::need_more));
     }
 
@@ -807,13 +794,9 @@ namespace net::http::http1 {
      * @see
      * https://datatracker.ietf.org/doc/html/rfc9110#name-authoritative-access
     */
-    size_expected parse_port(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
+    size_expected parse_port(cpointer beg, cpointer end) noexcept {
       uint16_t acc = 0;
       uint16_t cur = 0;
-
       for (const std::byte* p = beg; p < end; ++p) {
         // Calculate the port value and save it in acc variable.
         if (detail::is_digit(*p)) [[likely]] {
@@ -851,6 +834,7 @@ namespace net::http::http1 {
         }
         } // switch
       }   // for
+
       return net::unexpected(make_error_code(error::need_more));
     }
 
@@ -861,11 +845,7 @@ namespace net::http::http1 {
      * filename in a request. It does not include scheme, host, port or query
      * string. If no error occurs, the inner request's path field will be filled.
     */
-    size_expected parse_path(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
-
+    size_expected parse_path(cpointer beg, cpointer end) noexcept {
       for (const std::byte* p = beg; p < end; ++p) {
         if (detail::byte_is(*p, '?')) {
           message_->path = detail::to_string(beg, p);
@@ -883,6 +863,7 @@ namespace net::http::http1 {
           return net::unexpected(make_error_code(error::bad_path));
         }
       }
+
       return net::unexpected(make_error_code(error::need_more));
     }
 
@@ -901,11 +882,7 @@ namespace net::http::http1 {
      *   duplicated parameters name in order.
      * @see parameters: https://datatracker.ietf.org/doc/html/rfc9110#name-parameters
     */
-    size_expected parse_param_name(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
-
+    size_expected parse_param_name(cpointer beg, cpointer end) noexcept {
       for (const std::byte* p = beg; p < end; ++p) {
         if (detail::byte_is(*p, '&')) {
           param_state_ = param_state::name;
@@ -945,6 +922,7 @@ namespace net::http::http1 {
           return net::unexpected(make_error_code(error::bad_params));
         }
       }
+
       return net::unexpected(make_error_code(error::need_more));
     }
 
@@ -954,11 +932,7 @@ namespace net::http::http1 {
      *               OWS             = *( SP / HTAB )
      *                               ; optional whitespace
     */
-    size_expected parse_param_value(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
-
+    size_expected parse_param_value(cpointer beg, cpointer end) noexcept {
       for (const std::byte* p = beg; p < end; ++p) {
         if (detail::byte_is(*p, '&')) {
           message_->params.emplace(inner_name_, detail::to_string(beg, p));
@@ -976,6 +950,7 @@ namespace net::http::http1 {
           return net::unexpected(make_error_code(error::bad_params));
         }
       }
+
       return net::unexpected(make_error_code(error::need_more));
     }
 
@@ -985,19 +960,20 @@ namespace net::http::http1 {
      *               parameters      = *( OWS ";" OWS [ parameter ] )
      *               parameter       = parameter-name "=" parameter-value
     */
-    size_expected parse_params(const_buffer buf) noexcept {
+    size_expected parse_params(cpointer beg, cpointer end) noexcept {
       static_assert(http1_request_concept<Message>);
       size_expected result = 0;
       std::size_t total_parsed_len = 0;
+      cpointer p = beg;
 
       while (true) {
         switch (param_state_) {
         case param_state::name: {
-          result = parse_param_name(buf);
+          result = parse_param_name(p, end);
           break;
         }
         case param_state::value: {
-          result = parse_param_value(buf);
+          result = parse_param_value(p, end);
           break;
         }
         case param_state::completed: {
@@ -1009,7 +985,8 @@ namespace net::http::http1 {
         if (!result) {
           return result;
         }
-        update_length_and_buffer(*result, total_parsed_len, buf);
+        p += *result;
+        total_parsed_len += *result;
       }
     }
 
@@ -1017,14 +994,12 @@ namespace net::http::http1 {
      * @details Parse whitespaces before http version. Multiply whitespaces are
      * allowd between uri and http version.
     */
-    size_expected parse_spaces_before_version(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
+    size_expected parse_spaces_before_version(cpointer beg, cpointer end) noexcept {
       const std::byte* p = detail::trim_front(beg, end);
       if (p == end) [[unlikely]] {
         return net::unexpected(make_error_code(error::need_more));
       }
+
       request_line_state_ = request_line_state::version;
       return detail::len(beg, p);
     }
@@ -1042,15 +1017,11 @@ namespace net::http::http1 {
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-protocol-version
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-http-version
     */
-    size_expected parse_request_http_version(const_buffer buf) noexcept {
-      static_assert(http1_request_concept<Message>);
+    size_expected parse_request_http_version(cpointer beg, cpointer end) noexcept {
       constexpr std::size_t version_length = 10;
-      if (buf.size() < version_length) {
+      if (detail::len(beg, end) < version_length) {
         return net::unexpected(make_error_code(error::need_more));
       }
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
-
       if (
         beg[0] != std::byte{'H'} ||  //
         beg[1] != std::byte{'T'} ||  //
@@ -1080,21 +1051,22 @@ namespace net::http::http1 {
      * describing the status code.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-status-line
     */
-    size_expected parse_status_line(const_buffer buf) noexcept {
+    size_expected parse_status_line(cpointer beg, cpointer end) noexcept {
       size_expected result = 0;
       std::size_t total_parsed_len = 0;
+      cpointer p = beg;
       while (true) {
         switch (status_line_state_) {
         case status_line_state::version: {
-          result = parse_rsponse_http_version(buf);
+          result = parse_rsponse_http_version(p, end);
           break;
         }
         case status_line_state::status_code: {
-          result = parse_status_code(buf);
+          result = parse_status_code(p, end);
           break;
         }
         case status_line_state::reason: {
-          result = parse_reason(buf);
+          result = parse_reason(p, end);
           break;
         }
         case status_line_state::completed: {
@@ -1105,7 +1077,8 @@ namespace net::http::http1 {
         if (!result) {
           return result;
         }
-        update_length_and_buffer(*result, total_parsed_len, buf);
+        p += *result;
+        total_parsed_len += *result;
       }
     }
 
@@ -1113,17 +1086,12 @@ namespace net::http::http1 {
      * @details Like @ref parse_request_http_version, but doesn't need CRLF. Instead,
      * this function needs SP to indicate version is received completed.
     */
-    size_expected parse_rsponse_http_version(const_buffer buf) noexcept {
-      static_assert(http1_response_concept<Message>);
-
+    size_expected parse_rsponse_http_version(cpointer beg, cpointer end) noexcept {
       // HTTP/1.1 + SP
       constexpr std::size_t version_length = 9;
-      if (buf.size() < version_length) {
+      if (detail::len(beg, end) < version_length) {
         return net::unexpected(make_error_code(error::need_more));
       }
-
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
       if (
         beg[0] != std::byte{'H'} ||  //
         beg[1] != std::byte{'T'} ||  //
@@ -1150,17 +1118,12 @@ namespace net::http::http1 {
      * the server's attempt to understand and satisfy the client's corresponding
      * request.
     */
-    size_expected parse_status_code(const_buffer buf) noexcept {
-      static_assert(http1_response_concept<Message>);
-
+    size_expected parse_status_code(cpointer beg, cpointer /*end*/) noexcept {
       // 3DIGIT + SP
       constexpr std::size_t status_length = 4;
       if (status_length < 4) {
         return net::unexpected(make_error_code(error::need_more));
       }
-
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
       if (!detail::byte_is(beg[3], ' ')) {
         return net::unexpected(make_error_code(error::bad_status));
       }
@@ -1168,6 +1131,7 @@ namespace net::http::http1 {
       if (message_->status_code == http_status_code::unknown) {
         return net::unexpected(make_error_code(error::unknown_status));
       }
+
       status_line_state_ = status_line_state::reason;
       return status_length;
     }
@@ -1180,10 +1144,7 @@ namespace net::http::http1 {
      * deference to earlier Internet application protocols that were more
      * frequently used with interactive text clients.
     */
-    size_expected parse_reason(const_buffer buf) noexcept {
-      static_assert(http1_response_concept<Message>);
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
+    size_expected parse_reason(cpointer beg, cpointer end) noexcept {
       for (const std::byte* p = beg; p < end; ++p) {
         if (!detail::byte_is(*p, '\r')) {
           continue;
@@ -1204,14 +1165,11 @@ namespace net::http::http1 {
      * all the headers have been parsed and the body can be parsed. Otherwise,
      * the line is still a header line.
     */
-    size_expected parse_expecting_new_line(const_buffer buf) noexcept {
+    size_expected parse_expecting_new_line(cpointer beg, cpointer end) noexcept {
       constexpr std::size_t line_ending_length = 2;
-      if (buf.size() < line_ending_length) {
+      if (detail::len(beg, end) < line_ending_length) {
         return net::unexpected(make_error_code(error::need_more));
       }
-
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
       if (detail::compare_2_char(beg, '\r', '\n')) {
         state_ = http1_parse_state::body;
       } else {
@@ -1229,9 +1187,7 @@ namespace net::http::http1 {
      * and in order.
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-field-names
     */
-    size_expected parse_header_name(const_buffer buf) noexcept {
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
+    size_expected parse_header_name(cpointer beg, cpointer end) noexcept {
       for (const std::byte* p = beg; p < end; ++p) {
         if (detail::byte_is(*p, ':')) {
           if (p == beg) [[unlikely]] {
@@ -1262,9 +1218,7 @@ namespace net::http::http1 {
      * or trailing whitespace. And it's not allowed to be empty.
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-field-values
     */
-    size_expected parse_header_value(const_buffer buf) noexcept {
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
+    size_expected parse_header_value(cpointer beg, cpointer end) noexcept {
       for (const std::byte* p = beg; p < end; ++p) {
         // Focus only on '\r'.
         if (detail::byte_is(*p, '\r')) {
@@ -1293,9 +1247,7 @@ namespace net::http::http1 {
     /*
      * @details Parse spaces between header name and header value.
     */
-    size_expected parse_spaces_before_header_value(const_buffer buf) noexcept {
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
+    size_expected parse_spaces_before_header_value(cpointer beg, cpointer end) noexcept {
       const std::byte* p = detail::trim_front(beg, end);
       if (p == end) {
         return net::unexpected(make_error_code(error::need_more));
@@ -1309,14 +1261,11 @@ namespace net::http::http1 {
      * @details According to RFC 9110:
      *                       header line ending = "\r\n"
     */
-    size_expected parse_header_line_ending(const_buffer buf) {
+    size_expected parse_header_line_ending(cpointer beg, cpointer end) {
       constexpr std::size_t line_ending_length = 2;
-      if (buf.size() < line_ending_length) {
+      if (detail::len(beg, end) < line_ending_length) {
         return net::unexpected(make_error_code(error::need_more));
       }
-
-      const auto* beg = buf.data();
-      const auto* end = buf.data() + buf.size();
       if (!detail::compare_2_char(beg, '\r', '\n')) {
         return net::unexpected(make_error_code(error::bad_line_ending));
       }
@@ -1369,27 +1318,28 @@ namespace net::http::http1 {
      * @see https://datatracker.ietf.org/doc/html/rfc9110#name-fields
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-field-syntax
     */
-    size_expected parse_header(const_buffer buf) noexcept {
+    size_expected parse_header(cpointer beg, cpointer end) noexcept {
       size_expected result = 0;
       std::size_t total_parsed_len = 0;
+      cpointer p = beg;
 
       header_state_ = header_state::name;
       while (true) {
         switch (header_state_) {
         case header_state::name: {
-          result = parse_header_name(buf);
+          result = parse_header_name(p, end);
           break;
         }
         case header_state::spaces_before_value: {
-          result = parse_spaces_before_header_value(buf);
+          result = parse_spaces_before_header_value(p, end);
           break;
         }
         case header_state::value: {
-          result = parse_header_value(buf);
+          result = parse_header_value(p, end);
           break;
         }
         case header_state::header_line_ending: {
-          result = parse_header_line_ending(buf);
+          result = parse_header_line_ending(p, end);
           break;
         }
         case header_state::completed: {
@@ -1399,7 +1349,8 @@ namespace net::http::http1 {
         if (!result) {
           return result;
         }
-        update_length_and_buffer(*result, total_parsed_len, buf);
+        p += *result;
+        total_parsed_len += *result;
       }
     }
 
@@ -1412,19 +1363,19 @@ namespace net::http::http1 {
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-message-body
      * @todo Currently this library only deal with Content-Length case.
     */
-    size_expected parse_body(const_buffer buf) noexcept {
+    size_expected parse_body(cpointer beg, cpointer end) noexcept {
       if (message_->content_length == 0) {
         state_ = http1_parse_state::completed;
         return 0;
       }
-      if (buf.size() < message_->content_length) {
+      if (detail::len(beg, end) < message_->content_length) {
         return net::unexpected(make_error_code(error::need_more));
       }
-      if (buf.size() > message_->content_length) {
+      if (detail::len(beg, end) > message_->content_length) {
         return net::unexpected(make_error_code(error::body_size_bigger_than_content_length));
       }
 
-      message_->body = detail::to_string(buf.data(), message_->content_length);
+      message_->body = detail::to_string(beg, message_->content_length);
       state_ = http1_parse_state::completed;
       return message_->content_length;
     }

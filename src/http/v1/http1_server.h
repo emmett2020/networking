@@ -61,9 +61,9 @@ namespace net::http::http1 {
 
   namespace _recv_request {
     template <http1_request_concept Request>
-    struct recv_state {
-      Request request{};
-      message_parser<Request> parser{&request};
+    struct recv_state_t {
+      std::unique_ptr<Request> request = nullptr;
+      message_parser<Request> parser{request};
       util::flat_buffer<8192> buffer{};
       Request::duration_t remaining_time{0};
     };
@@ -96,7 +96,7 @@ namespace net::http::http1 {
 
     // Initialize state
     template <class Request>
-    auto initialize_state(recv_state<Request>& state) noexcept {
+    auto initialize_state(recv_state_t<Request>& state) noexcept {
       constexpr auto opt = Request::socket_option();
       if (opt.keepalive_timeout != Request::unlimited_timeout) {
         state.remaining_time = opt.keepalive_timeout;
@@ -108,12 +108,12 @@ namespace net::http::http1 {
     // recv_request is an customization point object which we names cpo.
     struct recv_request_t {
       template <http1_socket_concept Socket, http1_request_concept Request>
-      stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
+      stdexec::sender auto operator()(Socket socket, std::unique_ptr<Request> req) const noexcept {
         // Type tratis.
         using timepoint_t = Request::timepoint_t;
-        using recv_state_t = recv_state<Request>;
+        using recv_state_t = recv_state_t<Request>;
 
-        return ex::just(recv_state_t{.request = req}) //
+        return ex::just(recv_state_t{.request{req}}) //
              | ex::let_value([&](recv_state_t& state) {
                  // Update necessary information once receive operation completed.
                  auto update_state = [&state](auto start, auto stop, std::size_t recv_size) {
@@ -135,17 +135,13 @@ namespace net::http::http1 {
                      decltype(ex::just(std::declval<bool>())),
                      decltype(ex::just_error(std::declval<std::error_code>()))>;
 
-                   std::error_code ec{};
-                   std::size_t parsed_size = state.parser.parse(state.buffer.rbuffer(), ec);
-                   if (ec != std::errc{}) {
-                     if (ec == error::need_more) {
-                       state.buffer.consume(parsed_size);
-                       state.buffer.prepare();
-                       return variant_t(ex::just(false));
-                     }
-                     return variant_t(ex::just_error(ec));
+                   auto result = state.parser.parse(state.buffer.rbuffer());
+                   if (!result) {
+                     return variant_t(ex::just_error(result.error()));
                    }
-                   return variant_t(ex::just(true));
+                   state.buffer.consume(*result);
+                   state.buffer.prepare();
+                   return variant_t(ex::just(state.parser.is_completed()));
                  };
 
                  auto scheduler = socket.context_->get_scheduler();
