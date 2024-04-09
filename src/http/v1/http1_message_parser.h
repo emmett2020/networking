@@ -396,12 +396,12 @@ namespace net::http::http1 {
     using cpointer = const byte_t*;
 
    public:
-    explicit message_parser(std::unique_ptr<Message> message) noexcept
+    explicit message_parser(Message* message) noexcept
       : message_(message) {
       inner_name_.reserve(8192);
     }
 
-    void reset(std::unique_ptr<Message> message) noexcept {
+    void reset(Message* message) noexcept {
       message_ = message;
       reset();
     }
@@ -979,14 +979,13 @@ namespace net::http::http1 {
         case param_state::completed: {
           inner_name_.clear();
           uri_state_ = uri_state::completed;
-          return total_parsed_len;
+          return detail::len(beg, p);
         }
         }
         if (!result) {
           return result;
         }
         p += *result;
-        total_parsed_len += *result;
       }
     }
 
@@ -1071,14 +1070,13 @@ namespace net::http::http1 {
         }
         case status_line_state::completed: {
           state_ = http1_parse_state::expecting_newline;
-          return total_parsed_len;
+          return detail::len(beg, p);
         }
         }
         if (!result) {
           return result;
         }
         p += *result;
-        total_parsed_len += *result;
       }
     }
 
@@ -1320,7 +1318,6 @@ namespace net::http::http1 {
     */
     size_expected parse_header(cpointer beg, cpointer end) noexcept {
       size_expected result = 0;
-      std::size_t total_parsed_len = 0;
       cpointer p = beg;
 
       header_state_ = header_state::name;
@@ -1344,13 +1341,13 @@ namespace net::http::http1 {
         }
         case header_state::completed: {
           state_ = http1_parse_state::expecting_newline;
+          return p - beg;
         }
         }
         if (!result) {
           return result;
         }
         p += *result;
-        total_parsed_len += *result;
       }
     }
 
@@ -1393,7 +1390,7 @@ namespace net::http::http1 {
     std::string inner_name_;
 
     // The message to be filled.
-    std::unique_ptr<Message> message_ = nullptr;
+    Message* message_ = nullptr;
   };
 
 } // namespace net::http::http1

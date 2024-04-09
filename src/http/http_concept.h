@@ -16,53 +16,61 @@
 
 #pragma once
 
+#include <concepts>
+#include <unordered_map>
 #include "http/http_common.h"
 
-namespace net::http::http1 {
-  // TODO: Implement this.
-  template <typename T>
-  concept http1_headers = true;
+namespace net::http {
+  template <typename...>
+  concept always_true_implement_later = true;
 
   template <typename T>
-  concept http1_metric_concept = true;
+  concept http1_headers = always_true_implement_later<T>;
 
   template <typename T>
-  concept http1_option_concept = true;
+  concept http1_parameters = always_true_implement_later<T>;
+
+  template <typename T>
+  concept http1_metric_concept = always_true_implement_later<T>;
+
+  template <typename T>
+  concept http1_option_concept = always_true_implement_later<T>;
 
   template <typename T>
   concept http1_request_concept = requires(T& t) {
-    { t.method } -> std::convertible_to<http_method>;
-    { t.scheme } -> std::same_as<http_scheme>;
-    { t.uri } -> std::same_as<std::string>;
-    { t.host } -> std::same_as<std::string>;
-    { t.port } -> std::convertible_to<port_t>;
-    { t.path } -> std::same_as<std::string>;
-    { t.version } -> std::same_as<http_version>;
-    { t.body } -> std::same_as<std::string>;
-    { t.content_length } -> std::convertible_to<std::size_t>;
+    { T::direction() } -> std::convertible_to<http_message_direction>;
+    { std::convertible_to<decltype(t.uri), std::string> };
+    { std::convertible_to<decltype(t.host), std::string> };
+    { std::convertible_to<decltype(t.path), std::string> };
+    { std::convertible_to<decltype(t.body), std::string> };
+    { std::convertible_to<decltype(t.method), http_method> };
+    { std::convertible_to<decltype(t.scheme), http_scheme> };
+    { std::convertible_to<decltype(t.port), std::size_t> };
+    { std::convertible_to<decltype(t.content_length), std::size_t> };
     { http1_headers<decltype(t.headers)> };
+    { http1_parameters<decltype(t.params)> };
   };
 
   template <typename T>
   concept http1_response_concept = requires(T& t) {
-    { t.version } -> std::convertible_to<http_version>;
-    { t.status_code } -> std::convertible_to<http_status_code>;
-    { t.reason } -> std::convertible_to<std::string>;
-    { t.body } -> std::convertible_to<std::string>;
-    { t.content_length } -> std::convertible_to<std::size_t>;
+    { std::convertible_to<decltype(t.version), http_version> };
+    { std::convertible_to<decltype(t.status_code), http_status_code > };
+    { std::convertible_to<decltype(t.reason), std::string> };
+    { std::convertible_to<decltype(t.content_length), std::size_t> };
     { http1_headers<decltype(t.headers)> };
+    { http1_parameters<decltype(t.params)> };
   };
 
   template <typename T>
   concept http1_message_concept = http1_response_concept<T> || http1_request_concept<T>;
 
   template <typename T>
-  concept http1_server_concept = true;
+  concept http1_server_concept = always_true_implement_later<T>;
 
   template <typename T>
-  concept http1_socket_concept = true;
+  concept http1_socket_concept = always_true_implement_later<T>;
 
   template <typename T>
-  concept socket_buffer_concept = true;
+  concept socket_buffer_concept = always_true_implement_later<T>;
 
-} // namespace net::http::http1
+} // namespace net::http

@@ -62,7 +62,7 @@ namespace net::http::http1 {
   namespace _recv_request {
     template <http1_request_concept Request>
     struct recv_state_t {
-      std::unique_ptr<Request> request = nullptr;
+      Request request = nullptr;
       message_parser<Request> parser{request};
       util::flat_buffer<8192> buffer{};
       Request::duration_t remaining_time{0};
@@ -108,7 +108,7 @@ namespace net::http::http1 {
     // recv_request is an customization point object which we names cpo.
     struct recv_request_t {
       template <http1_socket_concept Socket, http1_request_concept Request>
-      stdexec::sender auto operator()(Socket socket, std::unique_ptr<Request> req) const noexcept {
+      stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
         // Type tratis.
         using timepoint_t = Request::timepoint_t;
         using recv_state_t = recv_state_t<Request>;
@@ -129,7 +129,7 @@ namespace net::http::http1 {
                    return ex::just_error(err);
                  };
 
-                 // Parse HTTP1 request uses receive buffer.
+                 // Parse HTTP request uses receive buffer.
                  auto parse_request = [&state] {
                    using variant_t = ex::variant_sender<
                      decltype(ex::just(std::declval<bool>())),
@@ -165,8 +165,8 @@ namespace net::http::http1 {
       template <class Request>
       ex::sender auto operator()([[maybe_unused]] const Request& request) const noexcept {
         http1::response response;
-        // response.status_code = http1::http_status_code::ok;
-        // response.version = request.version;
+        response.status_code = http_status_code::ok;
+        response.version = request.version;
         return ex::just(response);
       }
     };

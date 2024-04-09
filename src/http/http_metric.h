@@ -27,14 +27,14 @@ namespace net::http {
     timepoint_t connected{};
     timepoint_t first{};
     timepoint_t last{};
-    duration_t max = 0;
-    duration_t min = 0;
-    duration_t elapsed = 0;
+    duration_t max{0};
+    duration_t min{0};
+    duration_t elapsed{0};
   };
 
   struct size_metric {
-    uint64_t total = 0;
-    uint32_t count = 0;
+    std::size_t total = 0;
+    std::size_t count = 0;
   };
 
   struct http_metric {
