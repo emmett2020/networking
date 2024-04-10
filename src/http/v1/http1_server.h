@@ -97,9 +97,10 @@ namespace net::http::http1 {
     // Initialize state
     template <class Request>
     auto initialize_state(recv_state_t<Request>& state) noexcept {
+      state.remaining_time = std::chrono::seconds{120};
       // TODO:
       // constexpr auto opt = Request::socket_option();
-      // if (opt.keepalive_timeout != Request::unlimited_timeout) {
+      // if (opt.keepalive_timeout != Request::option_t::unlimited_timeout) {
       //   state.remaining_time = opt.keepalive_timeout;
       // } else {
       //   state.remaining_time = opt.total_timeout;
@@ -237,7 +238,7 @@ namespace net::http::http1 {
     // A http server.
     struct server {
       using context_type = ex::io_uring_context;
-      using request_type = http1::request<http_message_direction::receive_from_client>;
+      using request_type = http1_server_request;
       using response_type = response;
       using acceptor_handle_type = sio::io_uring::acceptor_handle<sio::ip::tcp>;
       using acceptor_type = sio::io_uring::acceptor<sio::ip::tcp>;
@@ -278,7 +279,11 @@ namespace net::http::http1 {
                      return ex::just(session_type{.socket = socket})               //
                           | ex::let_value([&](session_type& session) {             //
                               return recv_request(session.socket, session.request) //
-                                   | ex::upon_error([](auto&&...) noexcept {});
+                                   | ex::upon_error([]<class E>(E&& e) noexcept {
+                                       if constexpr (std::same_as<E, std::error_code>) {
+                                         fmt::println("Error: {}", std::forward<E>(e).message());
+                                       }
+                                     });
                             });
                    })
                  | sio::ignore_all();

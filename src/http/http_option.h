@@ -23,6 +23,7 @@ namespace net::http {
   template <class Dur>
   struct http_recv_option {
     using duration_t = Dur;
+    static constexpr auto unlimited_timeout = duration_t::max();
     duration_t total_timeout{0};
     duration_t keepalive_timeout{0};
   };
@@ -30,11 +31,13 @@ namespace net::http {
   template <class Dur>
   struct http_send_option {
     using duration_t = Dur;
+    static constexpr auto unlimited_timeout = duration_t::max();
     duration_t total_timeout{0};
   };
 
   struct http_option {
     using duration_t = std::chrono::seconds;
+    static constexpr auto unlimited_timeout = duration_t::max();
 
     static constexpr auto recv_option() noexcept {
       return http_recv_option<duration_t>{};
