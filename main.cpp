@@ -13,23 +13,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #include <fmt/format.h>
-#include <iostream>
 #include <stdexec/execution.hpp>
 
-#include "http/v1/http1_message_parser.h"
+#include "http/http1.h"
+#include "http/v1/http1_server.h"
 
-// #include "http1/http_server.h"
-
-using namespace std; // NOLINT
+using namespace std;       // NOLINT
+using namespace net::http; // NOLINT
 
 int main() {
-  // net::http1::server server{"127.0.0.1", 1280};
-  // net::http1::start_server(server);
+  net::http::http_option option;
+  net::http::http_metric metric;
+  net::http::http1_client_request req;
+  net::http::http1_server_request req1;
+  net::http::http1_client_request_parser parser{&req};
+  net::http::http1_server_request_parser parser2{&req1};
+  net::http::http1::server server{"127.0.0.1", 1280};
+  net::http::http1::start_server(server);
 
-  std::cout << "hello world\n";
-  std::cout << "you can find me by xiaomingZhang2020@outlook.com\n";
-  std::string s;
+
+  fmt::println("hello world");
+  fmt::println("email: xiaomingZhang2020@outlook.com");
 
   return 0;
 }

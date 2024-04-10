@@ -61,9 +61,9 @@ namespace net::http::http1 {
 
   namespace _recv_request {
     template <http1_request_concept Request>
-    struct recv_state {
-      Request request{};
-      message_parser<Request> parser{&request};
+    struct recv_state_t {
+      Request request = nullptr;
+      message_parser<Request> parser{request};
       util::flat_buffer<8192> buffer{};
       Request::duration_t remaining_time{0};
     };
@@ -96,7 +96,7 @@ namespace net::http::http1 {
 
     // Initialize state
     template <class Request>
-    auto initialize_state(recv_state<Request>& state) noexcept {
+    auto initialize_state(recv_state_t<Request>& state) noexcept {
       constexpr auto opt = Request::socket_option();
       if (opt.keepalive_timeout != Request::unlimited_timeout) {
         state.remaining_time = opt.keepalive_timeout;
@@ -111,9 +111,9 @@ namespace net::http::http1 {
       stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
         // Type tratis.
         using timepoint_t = Request::timepoint_t;
-        using recv_state_t = recv_state<Request>;
+        using recv_state_t = recv_state_t<Request>;
 
-        return ex::just(recv_state_t{.request = req}) //
+        return ex::just(recv_state_t{.request{req}}) //
              | ex::let_value([&](recv_state_t& state) {
                  // Update necessary information once receive operation completed.
                  auto update_state = [&state](auto start, auto stop, std::size_t recv_size) {
@@ -129,23 +129,19 @@ namespace net::http::http1 {
                    return ex::just_error(err);
                  };
 
-                 // Parse HTTP1 request uses receive buffer.
+                 // Parse HTTP request uses receive buffer.
                  auto parse_request = [&state] {
                    using variant_t = ex::variant_sender<
                      decltype(ex::just(std::declval<bool>())),
                      decltype(ex::just_error(std::declval<std::error_code>()))>;
 
-                   std::error_code ec{};
-                   std::size_t parsed_size = state.parser.parse(state.buffer.rbuffer(), ec);
-                   if (ec != std::errc{}) {
-                     if (ec == error::need_more) {
-                       state.buffer.consume(parsed_size);
-                       state.buffer.prepare();
-                       return variant_t(ex::just(false));
-                     }
-                     return variant_t(ex::just_error(ec));
+                   auto result = state.parser.parse(state.buffer.rbuffer());
+                   if (!result) {
+                     return variant_t(ex::just_error(result.error()));
                    }
-                   return variant_t(ex::just(true));
+                   state.buffer.consume(*result);
+                   state.buffer.prepare();
+                   return variant_t(ex::just(state.parser.is_completed()));
                  };
 
                  auto scheduler = socket.context_->get_scheduler();
@@ -169,8 +165,8 @@ namespace net::http::http1 {
       template <class Request>
       ex::sender auto operator()([[maybe_unused]] const Request& request) const noexcept {
         http1::response response;
-        // response.status_code = http1::http_status_code::ok;
-        // response.version = request.version;
+        response.status_code = http_status_code::ok;
+        response.version = request.version;
         return ex::just(response);
       }
     };
@@ -241,7 +237,7 @@ namespace net::http::http1 {
     // A http server.
     struct server {
       using context_type = ex::io_uring_context;
-      using request_type = http1_client_request;
+      using request_type = http1::request<http_message_direction::receive_from_client>;
       using response_type = response;
       using acceptor_handle_type = sio::io_uring::acceptor_handle<sio::ip::tcp>;
       using acceptor_type = sio::io_uring::acceptor<sio::ip::tcp>;

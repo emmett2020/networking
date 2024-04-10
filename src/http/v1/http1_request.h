@@ -72,11 +72,9 @@ namespace net::http::http1 {
     std::string uri;
     std::string body;
     std::size_t content_length = 0;
-    headers_t headers_;
+    headers_t headers;
     params_t params;
     metric_t metric;
   };
 
-  using http1_client_request = request<http_message_direction::receive_from_client>;
-  using http1_server_request = request<http_message_direction::send_to_server>;
 } // namespace net::http::http1
