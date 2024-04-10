@@ -78,3 +78,8 @@ namespace net::http::http1 {
   };
 
 } // namespace net::http::http1
+
+namespace net::http {
+  using http1_client_request = http1::request<http_message_direction::receive_from_client>;
+  using http1_server_request = http1::request<http_message_direction::send_to_server>;
+}

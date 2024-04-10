@@ -62,10 +62,10 @@ namespace net::http::http1 {
   namespace _recv_request {
     template <http1_request_concept Request>
     struct recv_state_t {
-      Request request = nullptr;
-      message_parser<Request> parser{request};
+      Request request;
+      message_parser<Request> parser{&request};
       util::flat_buffer<8192> buffer{};
-      Request::duration_t remaining_time{0};
+      Request::option_t::duration_t remaining_time{0};
     };
 
     // Get detailed error enum by message parser state.
@@ -97,12 +97,13 @@ namespace net::http::http1 {
     // Initialize state
     template <class Request>
     auto initialize_state(recv_state_t<Request>& state) noexcept {
-      constexpr auto opt = Request::socket_option();
-      if (opt.keepalive_timeout != Request::unlimited_timeout) {
-        state.remaining_time = opt.keepalive_timeout;
-      } else {
-        state.remaining_time = opt.total_timeout;
-      }
+      // TODO:
+      // constexpr auto opt = Request::socket_option();
+      // if (opt.keepalive_timeout != Request::unlimited_timeout) {
+      //   state.remaining_time = opt.keepalive_timeout;
+      // } else {
+      //   state.remaining_time = opt.total_timeout;
+      // }
     };
 
     // recv_request is an customization point object which we names cpo.
@@ -110,7 +111,6 @@ namespace net::http::http1 {
       template <http1_socket_concept Socket, http1_request_concept Request>
       stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
         // Type tratis.
-        using timepoint_t = Request::timepoint_t;
         using recv_state_t = recv_state_t<Request>;
 
         return ex::just(recv_state_t{.request{req}}) //
@@ -125,7 +125,7 @@ namespace net::http::http1 {
 
                  // Sent error to downstream receiver if receive operation timeout.
                  auto handle_timeout = [&state] noexcept {
-                   std::error_code err = detailed_error(state.parser.State());
+                   std::error_code err = detailed_error(state.parser.state());
                    return ex::just_error(err);
                  };
 
@@ -293,6 +293,11 @@ namespace net::http::http1 {
   using _start_server::server;
 
 } // namespace net::http::http1
+
+namespace net::http {
+  using server = net::http::http1::server;
+  using http1::start_server;
+}
 
 /*
  * template<net::server Server>

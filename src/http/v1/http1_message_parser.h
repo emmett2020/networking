@@ -765,15 +765,15 @@ namespace net::http::http1 {
           uri_state_ = uri_state::port;
           return host_len + 1;
         case std::byte{'/'}:
-          message_->port = default_port(message_->scheme());
+          message_->port = default_port(message_->scheme);
           uri_state_ = uri_state::path;
           return host_len;
         case std::byte{'?'}:
-          message_->port = default_port(message_->scheme());
+          message_->port = default_port(message_->scheme);
           uri_state_ = uri_state::params;
           return host_len + 1;
         case std::byte{' '}:
-          message_->port = default_port(message_->scheme());
+          message_->port = default_port(message_->scheme);
           uri_state_ = uri_state::completed;
           return host_len;
         }
