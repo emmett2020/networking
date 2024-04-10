@@ -18,24 +18,20 @@
 #include <stdexec/execution.hpp>
 
 #include "http/http1.h"
-#include "http/v1/http1_message_parser.h"
-#include "http/v1/http1_request.h"
-
-#include "http/http_option.h"
+#include "http/v1/http1_server.h"
 
 using namespace std;       // NOLINT
 using namespace net::http; // NOLINT
 
 int main() {
-  // net::http1::server server{"127.0.0.1", 1280};
-  // net::http1::start_server(server);
-
   net::http::http_option option;
   net::http::http_metric metric;
   net::http::http1_client_request req;
   net::http::http1_server_request req1;
-  net::http::http1::message_parser<http1_client_request> parser{&req};
-  net::http::http1::message_parser<http1_server_request> parser2{&req1};
+  net::http::http1_client_request_parser parser{&req};
+  net::http::http1_server_request_parser parser2{&req1};
+  net::http::http1::server server{"127.0.0.1", 1280};
+  net::http::http1::start_server(server);
 
 
   fmt::println("hello world");

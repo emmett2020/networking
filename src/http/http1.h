@@ -19,12 +19,13 @@
 #include "http/http_common.h"
 #include "http/v1/http1_request.h"
 #include "http/v1/http1_message_parser.h"
+#include "http/v1/http1_server.h"
 
 namespace net::http {
   using http1_client_request = http1::request<http_message_direction::receive_from_client>;
   using http1_server_request = http1::request<http_message_direction::send_to_server>;
 
-  template <http_message_direction Direction>
-  using http1_request_parser = http1::message_parser<http1::request<Direction>>;
+  using http1_client_request_parser = http1::message_parser<http1_client_request>;
+  using http1_server_request_parser = http1::message_parser<http1_server_request>;
 
 } // namespace net::http

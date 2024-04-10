@@ -237,7 +237,7 @@ namespace net::http::http1 {
     // A http server.
     struct server {
       using context_type = ex::io_uring_context;
-      using request_type = http1_client_request;
+      using request_type = http1::request<http_message_direction::receive_from_client>;
       using response_type = response;
       using acceptor_handle_type = sio::io_uring::acceptor_handle<sio::ip::tcp>;
       using acceptor_type = sio::io_uring::acceptor<sio::ip::tcp>;
