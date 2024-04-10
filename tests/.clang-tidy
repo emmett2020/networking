@@ -1,4 +1,5 @@
 # Catch2 not meet this requirements.
+# Should we use a seprated file in a sub directory?
 Checks: '
   -misc-use-anonymous-namespace
 '
