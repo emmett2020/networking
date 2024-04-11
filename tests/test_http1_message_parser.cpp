@@ -32,13 +32,12 @@ using request_parser = message_parser<http1_client_request>;
 TEST_CASE("Parse http method", "[parse_http_request]") {
   http1_client_request req;
   request_parser parser{&req};
-  std::error_code ec{};
 
   SECTION("Parse valid GET method string should return http_method::get") {
     string method = "GET ";
-    auto result = parser.parse(std::as_bytes(std::span(method)));
-    fmt::println("{}", result.error().message());
-    CHECK((result && *result == 3));
+    auto result = parser.parse(std::span(method));
+    REQUIRE(result);
+    CHECK(*result == 3);
     CHECK(req.method == http_method::get);
     CHECK(parser.state_ == http1_parse_state::start_line);
     CHECK(parser.request_line_state_ == request_parser::request_line_state::spaces_before_uri);

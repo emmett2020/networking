@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <iterator>
 #include <limits>
+#include <span>
 #include <string>
 #include <system_error>
 #include <memory>
@@ -422,45 +423,49 @@ namespace net::http::http1 {
       return state_ == http1_parse_state::completed;
     }
 
+    size_expected parse(std::span<const char> buffer) noexcept {
+      return parse(std::as_bytes(buffer));
+    }
+
     size_expected parse(const_buffer buffer) noexcept {
       cpointer beg = buffer.data();
       cpointer end = buffer.data() + buffer.size();
-      cpointer p = beg;
+      cpointer cur = beg;
       size_expected result = 0;
       while (true) {
         switch (state_) {
         case http1_parse_state::nothing_yet:
         case http1_parse_state::start_line: {
           if constexpr (http1_request_concept<Message>) {
-            result = parse_request_line(p, end);
+            result = parse_request_line(cur, end);
           } else {
-            result = parse_status_line(p, end);
+            result = parse_status_line(cur, end);
           }
           break;
         }
         case http1_parse_state::expecting_newline: {
-          result = parse_expecting_new_line(p, end);
+          result = parse_expecting_new_line(cur, end);
           break;
         }
         case http1_parse_state::header: {
-          result = parse_header(p, end);
+          result = parse_header(cur, end);
           break;
         }
         case http1_parse_state::body: {
-          result = parse_body(p, end);
+          result = parse_body(cur, end);
           break;
         }
         case http1_parse_state::completed: {
-          return detail::len(beg, p);
+          return detail::len(beg, cur);
         }
         }
         if (!result) {
           if (result.error() == error::need_more) {
-            return detail::len(beg, p);
+            return detail::len(beg, cur);
           }
           return result;
         }
-        p += *result;
+        cur += *result;
       }
     }
 
@@ -581,7 +586,7 @@ namespace net::http::http1 {
         }
 
         // The first character after method string must be whitespace.
-        if (detail::byte_is(*p, ' ')) {
+        if (!detail::byte_is(*p, ' ')) {
           return net::unexpected(make_error_code(error::bad_method));
         }
 
