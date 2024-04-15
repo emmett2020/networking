@@ -7,6 +7,9 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin/tests/)
 # TODO: update stdexec catch2 version, so we can use the latest Catch2WithMain
 set (LIBS Catch2::Catch2WithMain fmt::fmt magic_enum tl::expected)
 
+add_executable(test_string_compare test_string_compare.cpp ${SOURCE_LIST})
+target_link_libraries(test_string_compare PRIVATE ${LIBS})
+
 add_executable(test_http1_message_parser test_http1_message_parser.cpp ${SOURCE_LIST})
 target_link_libraries(test_http1_message_parser PRIVATE ${LIBS})
 

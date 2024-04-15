@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <string_view>
 #include <string>
@@ -60,15 +61,17 @@ namespace net::util {
     using is_transparent = void;
 
     bool operator()(std::string_view s1, std::string_view s2) const noexcept {
-      return util::strcasecmp(s1, s2);
+      return std::lexicographical_compare(
+        s1.begin(), s1.end(), s2.begin(), s2.end(), [](char c1, char c2) {
+          return std::tolower(c1) < std::tolower(c2);
+        });
     }
 
     bool operator()(const std::string& s1, const std::string& s2) const noexcept {
-      return util::strcasecmp(s1, s2);
-    }
-
-    bool operator()(const char* s1, const char* s2) const noexcept {
-      return util::strcasecmp(s1, s2);
+      return std::lexicographical_compare(
+        s1.begin(), s1.end(), s2.begin(), s2.end(), [](char c1, char c2) {
+          return std::tolower(c1) < std::tolower(c2);
+        });
     }
   };
 

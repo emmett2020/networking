@@ -675,8 +675,8 @@ TEST_CASE("parse http headers", "[parse_http_request]") {
     CHECK(*result == buffer.size());
     CHECK(parser.state_ == http1_parse_state::expecting_newline);
     CHECK(req.headers.size() == 1);
-    CHECK(req.params.contains("Host"));
-    CHECK(req.params.find("Host")->second == "1.1.1.1");
+    REQUIRE(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
   }
 
   SECTION("Should return empty_header_name error when parse empty http header.") {
@@ -716,8 +716,8 @@ TEST_CASE("parse http headers", "[parse_http_request]") {
 
     CHECK(parser.state_ == http1_parse_state::expecting_newline);
     CHECK(req.headers.size() == 1);
-    CHECK(req.params.contains("x"));
-    CHECK(req.params.find("x")->second == "y");
+    REQUIRE(req.headers.contains("x"));
+    CHECK(req.headers.find("x")->second == "y");
   }
 
   //   SECTION("parse http header Host, multiply spaces before header value") {
