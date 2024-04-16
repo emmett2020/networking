@@ -465,7 +465,6 @@ namespace net::http::http1 {
       if (ec == error::need_more) {
         return detail::len(buf.beg, buf.cur);
       }
-      fmt::println("{}", ec.message()); // DEBUG DEBUG
       return net::unexpected(ec);
     }
 
@@ -1254,7 +1253,7 @@ namespace net::http::http1 {
 
         // Empty header value.
         if (whitespace == buf.cur - 1) {
-          ec = error::empty_header_name;
+          ec = error::empty_header_value;
           return;
         }
 
@@ -1376,6 +1375,9 @@ namespace net::http::http1 {
           return;
         }
         }
+      }
+      if (ec == error::need_more) {
+        buf.cur = buf.beg;
       }
     }
 

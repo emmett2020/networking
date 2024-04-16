@@ -713,336 +713,275 @@ TEST_CASE("parse http headers", "[parse_http_request]") {
     auto result = parser.parse(std::span(buffer));
     REQUIRE(result);
     CHECK(*result == buffer.size());
-
     CHECK(parser.state_ == http1_parse_state::expecting_newline);
     CHECK(req.headers.size() == 1);
     REQUIRE(req.headers.contains("x"));
     CHECK(req.headers.find("x")->second == "y");
   }
 
-  //   SECTION("parse http header Host, multiply spaces before header value") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Host:     1.1.1.1\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.Headers().size() == 1);
-  //     CHECK(req.params.contains("Host"));
-  //     CHECK(req.params.find("Host") == "1.1.1.1");
-  //   }
+  SECTION("parse http header Host, multiply spaces before header value") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host:     1.1.1.1\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 1);
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
+  }
+
+  SECTION("parse http header Host, multiply spaces after header value") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1     \r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 1);
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
+  }
+
+  SECTION("parse http header Host, no spaces after header value") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 1);
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
+  }
+
+  SECTION("parse http header Host, Host appear multiply times, save all repeated headers") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n"
+      "Host: 2.2.2.2\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 2);
+    REQUIRE(req.headers.count("Host") == 2);
+    auto range = req.headers.equal_range("Host");
+    CHECK(range.first->second == "1.1.1.1");
+    CHECK((++range.first)->second == "2.2.2.2");
+  }
+
+  SECTION(
+    "parse http header Host, Host appear multiply times but with different case, save all repeated "
+    "headers") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n"
+      "hoST: 2.2.2.2\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 2);
+    REQUIRE(req.headers.count("Host") == 2);
+    auto range = req.headers.equal_range("Host");
+    CHECK(range.first->second == "1.1.1.1");
+    CHECK((++range.first)->second == "2.2.2.2");
+  }
+
+  SECTION("Should return empty_header_value if http header value is empty.") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host:\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::empty_header_value);
+  }
+
+  SECTION("Parse multiply different http headers.") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host:1.1.1.1\r\n"
+      "Server:mock\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 2);
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
+    CHECK(req.headers.contains("Server"));
+    CHECK(req.headers.find("Server")->second == "mock");
+  }
+
+  SECTION("parse http header Accept") {
+    // The Accept request HTTP header indicates which content types, expressed
+    // as MIME types, the client is able to understand.
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Accept: image/*\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Accept"));
+    CHECK(req.headers.find("Accept")->second == "image/*");
+  }
+
+  SECTION("parse http header Accept-Encoding which value is gzip") {
+    // The Accept-Encoding request HTTP header indicates the content encoding
+    // (usually a compression algorithm) that the client can understand.
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Accept-Encoding: gzip\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Accept-Encoding"));
+    CHECK(req.headers.find("Accept-Encoding")->second == "gzip");
+  }
+
+  SECTION("parse http header Connection") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Connection: Keep-Alive\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Connection"));
+    CHECK(req.headers.find("Connection")->second == "Keep-Alive");
+  }
+
+  SECTION("parse http header Content-Encoding") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Encoding: gzip\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Content-Encoding"));
+    CHECK(req.headers.find("Content-Encoding")->second == "gzip");
+  }
+
+  SECTION("parse http header Content-Type") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Type: text/html;charset=utf-8\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Content-Type"));
+    CHECK(req.headers.find("Content-Type")->second == "text/html;charset=utf-8");
+  }
+
+  // SECTION("parse http header Content-Length, Content-Length has valid value") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: 120\r\n";
+  //   auto result = parser.parse(std::span(buffer));
+  //   REQUIRE(result);
+  //   CHECK(*result == buffer.size());
+  //   CHECK(parser.state_ == http1_parse_state::expecting_newline);
+  //   CHECK(req.headers.contains("Content-Length"));
+  //   CHECK(req.headers.find("Content-Length")->second == "120");
+  //   CHECK(req.content_length == 120);
+  // }
   //
-  //   SECTION("parse http header Host, multiply spaces after header value") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Host: 1.1.1.1     \r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.Headers().size() == 1);
-  //     CHECK(req.params.contains("Host"));
-  //     CHECK(req.params.find("Host") == "1.1.1.1");
-  //   }
+  // SECTION(
+  //   "parse http header Content-Length, the length value is out of range "
+  //   "should return bad_content_length") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: 12000000000000000000000000000000\r\n";
+  //   auto result = parser.parse(std::span(buffer));
+  //   REQUIRE(!result);
+  //   CHECK(result.error() == error::bad_content_length);
+  // }
   //
-  //   SECTION("parse http header Host, no spaces after header value") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Host: 1.1.1.1\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.Headers().size() == 1);
-  //     CHECK(req.params.contains("Host"));
-  //     CHECK(req.params.find("Host") == "1.1.1.1");
-  //   }
-  //
-  //   SECTION(
-  //     "parse http header Host, Host appear multiply times, use the last "
-  //     "appeared value") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Host: 1.1.1.1\r\n"
-  //       "Host: 2.2.2.2\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.Headers().size() == 1);
-  //     CHECK(req.params.contains("Host"));
-  //     CHECK(req.params.find("Host") == "2.2.2.2");
-  //   }
-  //
-  //   SECTION(
-  //     "parse http header Host, Host appears multiply times but with different "
-  //     "character case, use the last appeared value") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Host: 1.1.1.1\r\n"
-  //       "hoST: 2.2.2.2\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.Headers().size() == 1);
-  //     CHECK(req.params.contains("Host"));
-  //     CHECK(req.params.find("Host") == "2.2.2.2");
-  //   }
-  //
-  //   SECTION("parse empty http header value should return kEmptyparams.find") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Host:\r\n";
-  //     CHECK(parser.parse(buffer, ec) == 0);
-  //     CHECK(ec == Error::kEmptyparams.find);
-  //   }
-  //
-  //   SECTION("parse multiply http header") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Host:1.1.1.1\r\n"
-  //       "Server:mock\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.Headers().size() == 2);
-  //     CHECK(req.params.contains("Host"));
-  //     CHECK(req.params.find("Host") == "1.1.1.1");
-  //     CHECK(req.params.contains("Server"));
-  //     CHECK(req.params.find("Server") == "mock");
-  //   }
-  //
-  //   SECTION("parse http header Accept") {
-  //     // The Accept request HTTP header indicates which content types, expressed
-  //     // as MIME types, the client is able to understand.
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Accept: image/*\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Accept"));
-  //     CHECK(req.params.find("Accept") == "image/*");
-  //   }
-  //
-  //   SECTION("parse http header Accept-Encoding which value is gzip") {
-  //     // The Accept-Encoding request HTTP header indicates the content encoding
-  //     // (usually a compression algorithm) that the client can understand.
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Accept-Encoding: gzip\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Accept-Encoding"));
-  //     CHECK(req.params.find("Accept-Encoding") == "gzip");
-  //   }
-  //
-  //   SECTION("parse http header Accept-Encoding which value is compress") {
-  //     // The Accept-Encoding request HTTP header indicates the content encoding
-  //     // (usually a compression algorithm) that the client can understand.
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Accept-Encoding: compress\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Accept-Encoding"));
-  //     CHECK(req.params.find("Accept-Encoding") == "compress");
-  //   }
-  //
-  //   SECTION("parse http header Accept-Encoding which value is deflate") {
-  //     // The Accept-Encoding request HTTP header indicates the content encoding
-  //     // (usually a compression algorithm) that the client can understand.
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Accept-Encoding: deflate\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Accept-Encoding"));
-  //     CHECK(req.params.find("Accept-Encoding") == "deflate");
-  //   }
-  //
-  //   SECTION("parse http header Accept-Encoding which value is br") {
-  //     // The Accept-Encoding request HTTP header indicates the content encoding
-  //     // (usually a compression algorithm) that the client can understand.
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Accept-Encoding: br\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Accept-Encoding"));
-  //     CHECK(req.params.find("Accept-Encoding") == "br");
-  //   }
-  //
-  //   SECTION("parse http header Accept-Encoding which value is identity") {
-  //     // The Accept-Encoding request HTTP header indicates the content encoding
-  //     // (usually a compression algorithm) that the client can understand.
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Accept-Encoding: identity\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Accept-Encoding"));
-  //     CHECK(req.params.find("Accept-Encoding") == "identity");
-  //   }
-  //
-  //   SECTION("parse http header Accept-Encoding which value is *") {
-  //     // The Accept-Encoding request HTTP header indicates the content encoding
-  //     // (usually a compression algorithm) that the client can understand.
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Accept-Encoding: *\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Accept-Encoding"));
-  //     CHECK(req.params.find("Accept-Encoding") == "*");
-  //   }
-  //   SECTION(
-  //
-  //     "parse http header Accept-Encoding, header occurs multiply times, "
-  //     "combine all values in order") {
-  //     // The Accept-Encoding request HTTP header indicates the content encoding
-  //     // (usually a compression algorithm) that the client can understand.
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Accept-Encoding:*\r\n"
-  //       "Accept-Encoding:gzip\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Accept-Encoding"));
-  //     CHECK(req.params.find("Accept-Encoding") == "*,gzip");
-  //   }
-  //
-  //   SECTION("parse http header Connection") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Connection: Keep-Alive\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Connection"));
-  //     CHECK(req.params.find("Connection") == "Keep-Alive");
-  //   }
-  //
-  //   SECTION("parse http header Content-Encoding") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Content-Encoding: gzip\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Content-Encoding"));
-  //     CHECK(req.params.find("Content-Encoding") == "gzip");
-  //   }
-  //
-  //   SECTION("parse http header Content-Type") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Content-Type: text/html;charset=utf-8\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Content-Type"));
-  //     CHECK(req.params.find("Content-Type") == "text/html;charset=utf-8");
-  //   }
-  //
-  //   SECTION("parse http header Content-Length, Content-Length has valid value") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Content-Length: 120\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Content-Length"));
-  //     CHECK(req.params.find("Content-Length") == "120");
-  //     CHECK(req.content_length == 120);
-  //   }
-  //
-  //   SECTION(
-  //     "parse http header Content-Length, the length value is out of range "
-  //     "should return kBadContentLength") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Content-Length: 12000000000000000000000000000000\r\n";
-  //     CHECK(parser.parse(buffer, ec) == 0);
-  //     CHECK(ec == Error::kBadContentLength);
-  //   }
-  //
-  //   SECTION(
-  //     "parse http header Content-Length, the length string is invalid "
-  //     "should return kBadContentLength") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Content-Length: -10\r\n";
-  //     CHECK(parser.parse(buffer, ec) == 0);
-  //     CHECK(ec == Error::kBadContentLength);
-  //   }
-  //
-  //   SECTION("parse http header Date") {
-  //     string buffer =
-  //       "GET /index.html HTTP/1.1\r\n"
-  //       "Date: Thu, 11 Aug 2016 15:23:13 GMT\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //     CHECK(req.params.contains("Date"));
-  //     CHECK(req.params.find("Date") == "Thu, 11 Aug 2016 15:23:13 GMT");
-  //   }
-  //
-  //   SECTION("Step by Step parse http header") {
-  //     string buffer = "GET /index.html HTTP/1.1\r\n";
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //
-  //     // Skip the parsed data.
-  //     buffer = "";
-  //
-  //     // Buffer: Ho
-  //     buffer += "Ho";
-  //     ec.clear();
-  //     CHECK(parser.parse(buffer, ec) == 0);
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::kHeader);
-  //
-  //     // Buffer: Host
-  //     buffer += "st";
-  //     ec.clear();
-  //     CHECK(parser.parse(buffer, ec) == 0);
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::kHeader);
-  //
-  //     // Buffer: Host:
-  //     buffer += ":";
-  //     ec.clear();
-  //     CHECK(parser.parse(buffer, ec) == 0);
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::kHeader);
-  //
-  //     // Buffer: Host:192.168.1.1
-  //     buffer += "192.168.1.1";
-  //     ec.clear();
-  //     CHECK(parser.parse(buffer, ec) == 0);
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::kHeader);
-  //
-  //     // Buffer: Host:192.168.1.1\r
-  //     buffer += "\r";
-  //     ec.clear();
-  //     CHECK(parser.parse(buffer, ec) == 0);
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::kHeader);
-  //
-  //     // Buffer: Host:192.168.1.1\r\n
-  //     buffer += "\n";
-  //     ec.clear();
-  //     CHECK(parser.parse(buffer, ec) == buffer.size());
-  //     CHECK(ec == Error::kNeedMore);
-  //     CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //   }
+  // SECTION(
+  //   "parse http header Content-Length, the length string is invalid "
+  //   "should return bad_content_length") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: -10\r\n";
+  //   auto result = parser.parse(std::span(buffer));
+  //   REQUIRE(!result);
+  //   CHECK(result.error() == error::bad_content_length);
+  // }
+
+  SECTION("parse http header Date") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Date: Thu, 11 Aug 2016 15:23:13 GMT\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Date"));
+    CHECK(req.headers.find("Date")->second == "Thu, 11 Aug 2016 15:23:13 GMT");
+  }
+
+  SECTION("Step by Step parse http header") {
+    string buffer = "GET /index.html HTTP/1.1\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+
+    // Skip the parsed data.
+    buffer = "";
+
+    // Buffer: Ho
+    buffer += "Ho";
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
+
+    // Buffer: Host
+    buffer += "st";
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
+
+    // Buffer: Host:
+    buffer += ":";
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
+
+    // Buffer: Host:192.168.1.1
+    buffer += "192.168.1.1";
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
+
+    // Buffer: Host:192.168.1.1\r
+    buffer += "\r";
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
+
+    // Buffer: Host:192.168.1.1\r\n
+    buffer += "\n";
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "192.168.1.1");
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+  }
 }
 
 //
