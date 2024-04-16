@@ -953,40 +953,29 @@ TEST_CASE("parse http request body", "[parse_http_request]") {
   http1_client_request req;
   request_parser parser{&req};
 
-  // SECTION("parse special HTTP header Content-Length, Content-Length has valid value") {
-  //   string buffer =
-  //     "GET /index.html HTTP/1.1\r\n"
-  //     "Content-Length: 120\r\n";
-  //   auto result = parser.parse(std::span(buffer));
-  //   REQUIRE(result);
-  //   CHECK(*result == buffer.size());
-  //   CHECK(parser.state_ == http1_parse_state::expecting_newline);
-  //   CHECK(req.headers.contains("Content-Length"));
-  //   CHECK(req.headers.find("Content-Length")->second == "120");
-  //   CHECK(req.content_length == 120);
-  // }
-  //
-  // SECTION(
-  //   "parse special HTTP header Content-Length, the length value is out of range "
-  //   "should return bad_content_length") {
-  //   string buffer =
-  //     "GET /index.html HTTP/1.1\r\n"
-  //     "Content-Length: 12000000000000000000000000000000\r\n";
-  //   auto result = parser.parse(std::span(buffer));
-  //   REQUIRE(!result);
-  //   CHECK(result.error() == error::bad_content_length);
-  // }
-  //
-  // SECTION(
-  //   "parse special HTTP header Content-Length, the length string is invalid "
-  //   "should return bad_content_length") {
-  //   string buffer =
-  //     "GET /index.html HTTP/1.1\r\n"
-  //     "Content-Length: -10\r\n";
-  //   auto result = parser.parse(std::span(buffer));
-  //   REQUIRE(!result);
-  //   CHECK(result.error() == error::bad_content_length);
-  // }
+  SECTION(
+    "parse special HTTP header Content-Length, the length value is out of range "
+    "should return bad_content_length") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Length: 12000000000000000000000000000000\r\n"
+      "\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_content_length);
+  }
+
+  SECTION(
+    "parse special HTTP header Content-Length, the length string is invalid "
+    "should return bad_content_length") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Length: -10\r\n"
+      "\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_content_length);
+  }
 
   SECTION("No Content-Length header means no request body") {
     string buffer =

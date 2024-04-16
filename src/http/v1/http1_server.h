@@ -62,8 +62,8 @@ namespace net::http::http1 {
   namespace _recv_request {
     template <http1_request_concept Request>
     struct recv_state_t {
-      Request request;
-      message_parser<Request> parser{&request};
+      Request* request;
+      message_parser<Request> parser{request};
       util::flat_buffer<8192> buffer{};
       Request::option_t::duration_t remaining_time{0};
     };
@@ -114,12 +114,12 @@ namespace net::http::http1 {
         // Type tratis.
         using recv_state_t = recv_state_t<Request>;
 
-        return ex::just(recv_state_t{.request{req}}) //
+        return ex::just(recv_state_t{.request{&req}}) //
              | ex::let_value([&](recv_state_t& state) {
                  // Update necessary information once receive operation completed.
                  auto update_state = [&state](auto start, auto stop, std::size_t recv_size) {
                    state.buffer.commit(recv_size);
-                   state.request.update_metric(start, stop, recv_size);
+                   state.request->update_metric(start, stop, recv_size);
                    state.remaining_time -= std::chrono::duration_cast<std::chrono::seconds>(
                      start - stop);
                  };
