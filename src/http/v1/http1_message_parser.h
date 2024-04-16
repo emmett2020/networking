@@ -1317,7 +1317,7 @@ namespace net::http::http1 {
     }
 
     void parse_header_content_length(error_code& ec) noexcept {
-      auto range = message_->heades.equal_range(http_header_content_length);
+      auto range = message_->headers.equal_range(http_header_content_length);
       auto header_cnt = std::distance(range.first, range.second);
       if (header_cnt > 1) {
         ec = error::multiple_content_length;
@@ -1330,8 +1330,8 @@ namespace net::http::http1 {
 
       std::size_t len = 0;
       auto [_, res] = std::from_chars(
-        range.first->data(), //
-        range.first->data() + range.first->size(),
+        range.first->second.data(), //
+        range.first->second.data() + range.first->second.size(),
         len);
       if (res != std::errc()) {
         ec = error::bad_content_length;
@@ -1350,7 +1350,6 @@ namespace net::http::http1 {
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-field-syntax
     */
     void parse_header(bytes_buffer& buf, error_code& ec) noexcept {
-
       header_state_ = header_state::name;
       while (ec == std::errc()) {
         switch (header_state_) {
@@ -1391,6 +1390,10 @@ namespace net::http::http1 {
      * @todo Currently this library only deal with Content-Length case.
     */
     void parse_body(bytes_buffer& buf, error_code& ec) noexcept {
+      parse_special_headers(ec);
+      if (ec != std::errc{}) {
+        return;
+      }
       if (message_->content_length == 0) {
         state_ = http1_parse_state::completed;
         return;
