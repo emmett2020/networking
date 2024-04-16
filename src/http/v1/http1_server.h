@@ -37,6 +37,7 @@
 
 #include "expected.h"
 #include "http/v1/http1_request.h"
+#include "sio/io_concepts.hpp"
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
 #include "utils/flat_buffer.h"
@@ -62,7 +63,7 @@ namespace net::http::http1 {
   namespace _recv_request {
     template <http1_request_concept Request>
     struct recv_state_t {
-      Request* request;
+      Request* request = nullptr;
       message_parser<Request> parser{request};
       util::flat_buffer<8192> buffer{};
       Request::option_t::duration_t remaining_time{0};
@@ -110,11 +111,11 @@ namespace net::http::http1 {
     // recv_request is an customization point object which we names cpo.
     struct recv_request_t {
       template <http1_socket_concept Socket, http1_request_concept Request>
-      stdexec::sender auto operator()(Socket socket, Request& req) const noexcept {
+      stdexec::sender auto operator()(Socket& socket, Request& req) const noexcept {
         // Type tratis.
         using recv_state_t = recv_state_t<Request>;
 
-        return ex::just(recv_state_t{.request{&req}}) //
+        return ex::just(recv_state_t{.request = &req}) //
              | ex::let_value([&](recv_state_t& state) {
                  // Update necessary information once receive operation completed.
                  auto update_state = [&state](auto start, auto stop, std::size_t recv_size) {
@@ -279,7 +280,11 @@ namespace net::http::http1 {
                      return ex::just(session_type{.socket = socket})               //
                           | ex::let_value([&](session_type& session) {             //
                               return recv_request(session.socket, session.request) //
-                                   | ex::upon_error([]<class E>(E&& e) noexcept {
+                                   | ex::then([&]() {
+                                       fmt::println("uri: {}", session.request.uri);
+                                       fmt::println("body: {}", session.request.body);
+                                     })
+                                   | ex::upon_error([]<class E>(E&& e) {
                                        if constexpr (std::same_as<E, std::error_code>) {
                                          fmt::println("Error: {}", std::forward<E>(e).message());
                                        }
