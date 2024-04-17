@@ -55,9 +55,7 @@ namespace ex {
 namespace net::http::http1 {
   struct send_state {
     std::string start_line_and_headers;
-    http1::response response;
-    std::error_code ec{};
-    std::uint32_t total_send_size{0};
+    http1_client_response response;
   };
 
   namespace _recv_request {
@@ -166,7 +164,7 @@ namespace net::http::http1 {
     struct handle_request_t {
       template <class Request>
       ex::sender auto operator()([[maybe_unused]] const Request& request) const noexcept {
-        http1::response response;
+        http1_client_response response;
         response.status_code = http_status_code::ok;
         response.version = request.version;
         return ex::just(response);
@@ -217,7 +215,7 @@ namespace net::http::http1 {
 
     // A http session is a conversation between client and server.
     // We use session id to identify a specific unique conversation.
-    template <class Context, class Socket, class Request>
+    template <class Context, class Socket, class Request, class Response>
     struct session {
       // Just a simple session id factory which must be replaced in future.
       using id_type = uint64_t;
@@ -231,7 +229,7 @@ namespace net::http::http1 {
       id_type id{make_session_id()};
       Socket socket{};
       Request request{};
-      http1::response response{};
+      Response response{};
       std::size_t reuse_cnt{0};
     };
 
@@ -239,12 +237,12 @@ namespace net::http::http1 {
     // A http server.
     struct server {
       using context_type = ex::io_uring_context;
-      using request_type = http1_server_request;
-      using response_type = response;
+      using request_type = http1_client_request;
+      using response_type = http1_client_response;
       using acceptor_handle_type = sio::io_uring::acceptor_handle<sio::ip::tcp>;
       using acceptor_type = sio::io_uring::acceptor<sio::ip::tcp>;
       using socket_type = sio::io_uring::socket_handle<sio::ip::tcp>;
-      using session_type = session<context_type, socket_type, request_type>;
+      using session_type = session<context_type, socket_type, request_type, response_type>;
 
       server(std::string_view addr, uint16_t port) noexcept
         : server(sio::ip::endpoint{sio::ip::make_address_v4(addr), port}) {

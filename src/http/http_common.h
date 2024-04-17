@@ -491,6 +491,8 @@ namespace net::http {
 
   enum class http_message_direction {
     send_to_server,
+    send_to_client,
+    receiver_from_server,
     receive_from_client,
   };
 
