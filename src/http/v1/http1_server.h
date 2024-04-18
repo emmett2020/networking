@@ -22,6 +22,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <exception>
 #include <type_traits>
@@ -53,11 +54,6 @@ namespace ex {
 }
 
 namespace net::http::http1 {
-  struct send_state {
-    std::string start_line_and_headers;
-    http1_client_response response;
-  };
-
   namespace _recv_request {
     template <http1_request_concept Request>
     struct recv_state_t {
@@ -162,12 +158,11 @@ namespace net::http::http1 {
 
   namespace _handle_request {
     struct handle_request_t {
-      template <class Request>
-      ex::sender auto operator()([[maybe_unused]] const Request& request) const noexcept {
-        http1_client_response response;
+      template <class Request, class Response>
+      ex::sender auto operator()(const Request& request, Response& response) const noexcept {
         response.status_code = http_status_code::ok;
         response.version = request.version;
-        return ex::just(response);
+        return ex::just();
       }
     };
 
@@ -175,28 +170,65 @@ namespace net::http::http1 {
 
   inline constexpr _handle_request::handle_request_t handle_request{};
 
-  namespace _create_response {
-    struct create_response_t {
-      ex::sender auto operator()(send_state& state) const {
-        string_expected response_str = state.response.to_string();
-        if (response_str.has_value()) {
-          state.start_line_and_headers = std::move(*response_str);
-        }
-        return ex::if_then_else(
-          response_str.has_value(), ex::just(), ex::just_error(error::invalid_response));
+  // namespace _create_response {
+  //   struct create_response_t {
+  //     ex::sender auto operator()(send_state& state) const {
+  //       string_expected response_str = state.response.to_string();
+  //       if (response_str.has_value()) {
+  //         state.start_line_and_headers = std::move(*response_str);
+  //       }
+  //       return ex::if_then_else(
+  //         response_str.has_value(), ex::just(), ex::just_error(error::invalid_response));
+  //     }
+  //   };
+  // } // namespace _create_response
+
+  // inline constexpr _create_response::create_response_t create_response{};
+
+  namespace _send_response {
+    template <class Response>
+    struct send_state_t {
+      std::string buffer;
+      Response response;
+      std::size_t total_write_size{0};
+    };
+
+    struct send_response_t {
+      template <http1_socket_concept Socket, http1_response_concept Response>
+      ex::sender auto operator()(Socket& socket, const Response& response) const noexcept {
+        using send_state_t = send_state_t<Response>;
+        return ex::just(send_state_t{}) //
+             | ex::let_value([&](send_state_t& state) {
+                 string_expected response_str = response.to_string();
+                 if (response_str.has_value()) {
+                   state.buffer = std::move(*response_str);
+                 }
+                 state.response = response; // low performance
+                 state.buffer += response.body; // WARN: low performance.
+
+                 auto check_write_done = [&](size_t sz) {
+                   state.total_write_size += sz;
+                   return state.total_write_size >= state.buffer.size();
+                 };
+
+                 return sio::async::write_some(
+                          socket, std::as_writable_bytes(std::span(state.buffer))) //
+                      | ex::then(check_write_done)                                 //
+                      | ex::repeat_effect_until();
+               });
       }
     };
-  } // namespace _create_response
+  } // namespace _send_response
 
-  inline constexpr _create_response::create_response_t create_response{};
+  inline constexpr _send_response::send_response_t send_response{};
 
   namespace _start_server {
     template <http1_request_concept Request>
     bool need_keepalive(const Request& request) noexcept {
-      if (request.ContainsHeader(http_header_connection)) {
+      if (request.headers.contains(http_header_connection)) {
         return true;
       }
-      if (request.Version() == http_version::http11) {
+      if (request.version == http_version::http11) {
         return true;
       }
       return false;
@@ -270,7 +302,6 @@ namespace net::http::http1 {
         using session_type = Server::session_type;
         using socket_type = Server::socket_type;
         using acceptor_handle_type = Server::acceptor_handle_type;
-
         auto handles = sio::async::use_resources(
           [&](acceptor_handle_type acceptor) noexcept {
             return sio::async::accept(acceptor) //
@@ -282,6 +313,8 @@ namespace net::http::http1 {
                                        fmt::println("uri: {}", session.request.uri);
                                        fmt::println("body: {}", session.request.body);
                                      })
+                                   | ex::let_value([&]{ return handle_request(session.request, session.response);})
+                                   | ex::let_value([&]{ return send_response(session.socket, session.response);})
                                    | ex::upon_error([]<class E>(E&& e) {
                                        if constexpr (std::same_as<E, std::error_code>) {
                                          fmt::println("Error: {}", std::forward<E>(e).message());
@@ -307,17 +340,21 @@ namespace net::http {
   using http1::start_server;
 }
 
+// 1. How to act as a cpo since we don't know the request type?
+// 2. How to use request after sent response ? Or, should we use request after sent response?
+// 3. Hard to coding ?
+// 4. Not easy to extend?
+
 /*
  * template<net::server Server>
  * net::http::start_server(Server& server)
  *     let_value_with(socket)
  *         return handle_accepetd(socket)
  *                | let_value(create_session(socket))
- *                    return prepare_recv()
- *                           | recv_request(socket)
+ *                    return recv_request(socket)
  *                           | update_metrics()
  *                           | handle_request()
- *                           | send_response()
+ *                           | send_response(socket)
  *                           | update_metrics()
  *                           | check_keepalive()
  *                           | repeat_effect_until()
@@ -325,15 +362,27 @@ namespace net::http {
  *                           | handle_error();
  *
  *
+          return handle_accepetd(socket)
+               | let_value(create_session(socket))
+                   return prepare_recv()
+                          | recv_request(socket, session.request)
+                          | ex::then([] { return update_metrics(session.request.metrics); })
+                          | ex::let_value([] { return handle_request(session.request, session.response); })
+                          | ex::let_value([] { return send_response(socket, session.response); })
+                          | ex::then([] { return update_metrics(session.response.metrics); })
+                          | ex::then([] { return check_keepalive(session.request); })
+                          | ex::repeat_effect_until()
+                          | ex::upon_error(handle_error);
+
  *  start_server(server)                           -> void
  *  handle_accepetd(socket)                        -> void
  *  create_session(socket)                         -> tcp::session
  *  prepare_recv(&session)                         -> void
- *  recv_request(socket, recv_option)              -> sender<request, recv_metrics>
- *  handle_request(&request)                       -> sender<response>
- *  send_response(response, socket, send_option)   -> sender<send_metrics>
+ *  recv_request(socket, &request)                 -> sender<void>
+ *  handle_request(&request, &response)            -> sender<void>
+ *  send_response(socket, response)                -> sender<void>
  *  update_metrics(&metrics)                       -> void
+ *  check_keepalive(&request)                      -> sender<bool>
  *
- *  session: 
  *
  */

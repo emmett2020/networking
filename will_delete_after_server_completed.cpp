@@ -170,3 +170,18 @@ ex::sender auto recv_request(tcp_socket socket) {
        | ex::repeat_effect_until()                                          //
        | ex::then(finished);
 }
+
+
+        return handle_accepetd(socket)
+               | let_value(create_session(socket))
+                   return prepare_recv()
+                          | recv_request(socket, session.request)
+                          | ex::then([] { update_metrics(session.request.metrics); })
+                          | ex::let_value([] { handle_request(session.request, session.response); })
+                          | ex::let_value([] { send_response(socket, session.response); })
+                          | ex::then([] { update_metrics(session.response.metrics); })
+                          | ex::then([] { return check_keepalive(session.request); })
+                          | repeat_effect_until()
+                          | update_session()
+                          | handle_error();
+ 
