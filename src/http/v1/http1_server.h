@@ -160,8 +160,11 @@ namespace net::http::http1 {
     struct handle_request_t {
       template <class Request, class Response>
       ex::sender auto operator()(const Request& request, Response& response) const noexcept {
+        // Just do an echo now
         response.status_code = http_status_code::ok;
         response.version = request.version;
+        response.headers = request.headers;
+        response.body = request.body;
         return ex::just();
       }
     };
@@ -169,21 +172,6 @@ namespace net::http::http1 {
   } // namespace _handle_request
 
   inline constexpr _handle_request::handle_request_t handle_request{};
-
-  // namespace _create_response {
-  //   struct create_response_t {
-  //     ex::sender auto operator()(send_state& state) const {
-  //       string_expected response_str = state.response.to_string();
-  //       if (response_str.has_value()) {
-  //         state.start_line_and_headers = std::move(*response_str);
-  //       }
-  //       return ex::if_then_else(
-  //         response_str.has_value(), ex::just(), ex::just_error(error::invalid_response));
-  //     }
-  //   };
-  // } // namespace _create_response
-
-  // inline constexpr _create_response::create_response_t create_response{};
 
   namespace _send_response {
     template <class Response>
@@ -194,26 +182,43 @@ namespace net::http::http1 {
     };
 
     struct send_response_t {
-      template <http1_socket_concept Socket, http1_response_concept Response>
-      ex::sender auto operator()(Socket& socket, const Response& response) const noexcept {
-        using send_state_t = send_state_t<Response>;
-        return ex::just(send_state_t{}) //
-             | ex::let_value([&](send_state_t& state) {
-                 string_expected response_str = response.to_string();
-                 if (response_str.has_value()) {
-                   state.buffer = std::move(*response_str);
-                 }
-                 state.response = response; // low performance
-                 state.buffer += response.body; // WARN: low performance.
+      using string = std::string;
+      using size_t = std::size_t;
+      using sec_t = std::chrono::seconds;
 
-                 auto check_write_done = [&](size_t sz) {
-                   state.total_write_size += sz;
-                   return state.total_write_size >= state.buffer.size();
+      template <http1_socket_concept Socket, http1_response_concept Response>
+      ex::sender auto operator()(const Socket& socket, const Response& response) const noexcept {
+
+        auto make_response = [&] {
+          string_expected response_str = response.to_string();
+          return ex::if_then_else(
+            response_str.has_value(),
+            ex::just(*response_str, size_t{}),
+            ex::just_error(error::invalid_response));
+        };
+
+        // return ex::just(string{}, size_t{}) //
+        return make_response() //
+             | ex::let_value([&](string& buffer) {
+                 buffer += response.body; // TODO: waiting sio fully support const_buffer
+                 auto update_state = [&](auto start, auto stop, std::size_t recv_size) {
+                   // buffer.commit(recv_size);
+                   response.update_metric(start, stop, recv_size);
+                   // remaining_time -= std::chrono::duration_cast<std::chrono::seconds>(start - stop);
+                   return response.metrics.size.total >= buffer.size();
                  };
 
-                 return sio::async::write_some(
-                          socket, std::as_writable_bytes(std::span(state.buffer))) //
-                      | ex::then(check_write_done)                                 //
+                 // Sent error to downstream receiver if writing operation timeout.
+                 auto handle_timeout = [&] noexcept {
+                   std::error_code err{}; // TODO
+                   return ex::just_error(err);
+                 };
+
+                 auto scheduler = socket.context_->get_scheduler();
+                 return sio::async::write_some(socket, std::span(buffer)) //
+                      | ex::timeout(scheduler, std::chrono::seconds(10))  //
+                      | ex::let_stopped(handle_timeout)                   //
+                      | ex::then(update_state)                            //
                       | ex::repeat_effect_until();
                });
       }
@@ -235,10 +240,10 @@ namespace net::http::http1 {
     }
 
     template <class E>
-    auto handle_error(E&& e) {
-      if constexpr (std::is_same_v<E, std::error_code>) {
+    void handle_error(E&& e) noexcept {
+      if constexpr (std::same_as<E, std::error_code>) {
         std::cout << "Error orrcurred: " << std::forward<E>(e).message() << "\n";
-      } else if constexpr (std::is_same_v<E, std::exception_ptr>) {
+      } else if constexpr (std::same_as<E, std::exception_ptr>) {
         std::cout << "Error orrcurred: exception_ptr\n";
       } else {
         std::cout << "Unknown Error orrcurred\n";
@@ -309,12 +314,12 @@ namespace net::http::http1 {
                      return ex::just(session_type{.socket = socket})               //
                           | ex::let_value([&](session_type& session) {             //
                               return recv_request(session.socket, session.request) //
-                                   | ex::then([&]() {
-                                       fmt::println("uri: {}", session.request.uri);
-                                       fmt::println("body: {}", session.request.body);
+                                   | ex::let_value([&] {
+                                       return handle_request(session.request, session.response);
                                      })
-                                   | ex::let_value([&]{ return handle_request(session.request, session.response);})
-                                   | ex::let_value([&]{ return send_response(session.socket, session.response);})
+                                   | ex::let_value([&] {
+                                       return send_response(session.socket, session.response);
+                                     })
                                    | ex::upon_error([]<class E>(E&& e) {
                                        if constexpr (std::same_as<E, std::error_code>) {
                                          fmt::println("Error: {}", std::forward<E>(e).message());

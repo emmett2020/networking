@@ -20,8 +20,10 @@
 #include "http/http1.h"
 
 int main() {
-  fmt::println("start listening on {}:{}", "127.0.0.1", 8080);
-  net::http::server server{"127.0.0.1", 8080};
+  constexpr std::string_view ip = "127.0.0.1";
+  constexpr net::http::port_t port = 8080;
+  fmt::println("start listening on {}:{}", ip, port);
+  net::http::server server{ip, port};
   net::http::start_server(server);
   return 0;
 }
