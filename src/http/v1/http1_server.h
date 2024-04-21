@@ -25,6 +25,7 @@
 #include <span>
 #include <string>
 #include <exception>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <iostream>
@@ -39,9 +40,11 @@
 #include "expected.h"
 #include "http/v1/http1_request.h"
 #include "sio/io_concepts.hpp"
+#include "stdexec/execution.hpp"
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
 #include "utils/flat_buffer.h"
+#include "utils/just_from_expected.h"
 #include "http/http_common.h"
 #include "http/http_error.h"
 #include "http/v1/http1_message_parser.h"
@@ -54,178 +57,45 @@ namespace ex {
 }
 
 namespace net::http::http1 {
-  namespace _recv_request {
-    template <http1_request_concept Request>
-    struct recv_state_t {
-      Request* request = nullptr;
-      message_parser<Request> parser{request};
-      util::flat_buffer<8192> buffer{};
-      Request::option_t::duration_t remaining_time{0};
-    };
 
-    // Get detailed error enum by message parser state.
-    inline http::error detailed_error(http1_parse_state s) noexcept {
-      switch (s) {
-      case http1_parse_state::nothing_yet:
-        return error::recv_request_timeout_with_nothing;
-      case http1_parse_state::start_line:
-      case http1_parse_state::expecting_newline:
-        return error::recv_request_line_timeout;
-      case http1_parse_state::header:
-        return error::recv_request_headers_timeout;
-      case http1_parse_state::body:
-        return error::recv_request_body_timeout;
-      case http1_parse_state::completed:
-        return error::success;
-      }
+  using namespace std::chrono_literals;
+  using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
+  using parser_t = message_parser<http1_client_request>;
+
+  // Get detailed error enum by message parser state.
+  inline http::error detailed_error(http1_parse_state s) noexcept {
+    switch (s) {
+    case http1_parse_state::nothing_yet:
+      return error::recv_request_timeout_with_nothing;
+    case http1_parse_state::start_line:
+    case http1_parse_state::expecting_newline:
+      return error::recv_request_line_timeout;
+    case http1_parse_state::header:
+      return error::recv_request_headers_timeout;
+    case http1_parse_state::body:
+      return error::recv_request_body_timeout;
+    case http1_parse_state::completed:
+      return error::success;
     }
+  }
 
-    // Check the transferred bytes size. If it's zero,
-    // then error::end_of_stream will be sent to downstream receiver.
-    inline auto check_received_size(std::size_t sz) noexcept {
-      return ex::if_then_else(
-        sz != 0, //
-        ex::just(sz),
-        ex::just_error(error::end_of_stream));
-    };
+  // Check the transferred bytes size. If it's zero,
+  // then error::end_of_stream will be sent to downstream receiver.
+  inline auto check_received_size(std::size_t sz) noexcept {
+    return ex::if_then_else(
+      sz != 0, //
+      ex::just(sz),
+      ex::just_error(error::end_of_stream));
+  };
 
-    // Initialize state
-    template <class Request>
-    auto initialize_state(recv_state_t<Request>& state) noexcept {
-      state.remaining_time = std::chrono::seconds{120};
-      // TODO:
-      // constexpr auto opt = Request::socket_option();
-      // if (opt.keepalive_timeout != Request::option_t::unlimited_timeout) {
-      //   state.remaining_time = opt.keepalive_timeout;
-      // } else {
-      //   state.remaining_time = opt.total_timeout;
-      // }
-    };
+  // Parse HTTP request uses receive buffer.
+  ex::sender auto parse_request(parser_t& parser, util::flat_buffer<8192>& buffer) noexcept;
 
-    // recv_request is an customization point object which we names cpo.
-    struct recv_request_t {
-      template <http1_socket_concept Socket, http1_request_concept Request>
-      stdexec::sender auto operator()(Socket& socket, Request& req) const noexcept {
-        // Type tratis.
-        using recv_state_t = recv_state_t<Request>;
+  ex::sender auto recv_request(const tcp_socket& socket) noexcept;
 
-        return ex::just(recv_state_t{.request = &req}) //
-             | ex::let_value([&](recv_state_t& state) {
-                 // Update necessary information once receive operation completed.
-                 auto update_state = [&state](auto start, auto stop, std::size_t recv_size) {
-                   state.buffer.commit(recv_size);
-                   state.request->update_metric(start, stop, recv_size);
-                   state.remaining_time -= std::chrono::duration_cast<std::chrono::seconds>(
-                     start - stop);
-                 };
+  ex::sender auto handle_request(const http1_client_request& request) noexcept;
 
-                 // Sent error to downstream receiver if receive operation timeout.
-                 auto handle_timeout = [&state] noexcept {
-                   std::error_code err = detailed_error(state.parser.state());
-                   return ex::just_error(err);
-                 };
-
-                 // Parse HTTP request uses receive buffer.
-                 auto parse_request = [&state] {
-                   using variant_t = ex::variant_sender<
-                     decltype(ex::just(std::declval<bool>())),
-                     decltype(ex::just_error(std::declval<std::error_code>()))>;
-
-                   auto result = state.parser.parse(state.buffer.rbuffer());
-                   if (!result) {
-                     return variant_t(ex::just_error(result.error()));
-                   }
-                   state.buffer.consume(*result);
-                   state.buffer.prepare();
-                   return variant_t(ex::just(state.parser.is_completed()));
-                 };
-
-                 auto scheduler = socket.context_->get_scheduler();
-                 initialize_state(state);
-                 return sio::async::read_some(socket, state.buffer.wbuffer()) //
-                      | ex::let_value(check_received_size)                    //
-                      | ex::timeout(scheduler, state.remaining_time)          //
-                      | ex::let_stopped(handle_timeout)                       //
-                      | ex::then(update_state)                                //
-                      | ex::let_value(parse_request)                          //
-                      | ex::repeat_effect_until();
-               });
-      }
-    };
-  } // namespace _recv_request
-
-  inline constexpr _recv_request::recv_request_t recv_request{};
-
-  namespace _handle_request {
-    struct handle_request_t {
-      template <class Request, class Response>
-      ex::sender auto operator()(const Request& request, Response& response) const noexcept {
-        // Just do an echo now
-        response.status_code = http_status_code::ok;
-        response.version = request.version;
-        response.headers = request.headers;
-        response.body = request.body;
-        return ex::just();
-      }
-    };
-
-  } // namespace _handle_request
-
-  inline constexpr _handle_request::handle_request_t handle_request{};
-
-  namespace _send_response {
-    template <class Response>
-    struct send_state_t {
-      std::string buffer;
-      Response response;
-      std::size_t total_write_size{0};
-    };
-
-    struct send_response_t {
-      using string = std::string;
-      using size_t = std::size_t;
-      using sec_t = std::chrono::seconds;
-
-      template <http1_socket_concept Socket, http1_response_concept Response>
-      ex::sender auto operator()(const Socket& socket, const Response& response) const noexcept {
-
-        auto make_response = [&] {
-          string_expected response_str = response.to_string();
-          return ex::if_then_else(
-            response_str.has_value(),
-            ex::just(*response_str, size_t{}),
-            ex::just_error(error::invalid_response));
-        };
-
-        // return ex::just(string{}, size_t{}) //
-        return make_response() //
-             | ex::let_value([&](string& buffer) {
-                 buffer += response.body; // TODO: waiting sio fully support const_buffer
-                 auto update_state = [&](auto start, auto stop, std::size_t recv_size) {
-                   // buffer.commit(recv_size);
-                   response.update_metric(start, stop, recv_size);
-                   // remaining_time -= std::chrono::duration_cast<std::chrono::seconds>(start - stop);
-                   return response.metrics.size.total >= buffer.size();
-                 };
-
-                 // Sent error to downstream receiver if writing operation timeout.
-                 auto handle_timeout = [&] noexcept {
-                   std::error_code err{}; // TODO
-                   return ex::just_error(err);
-                 };
-
-                 auto scheduler = socket.context_->get_scheduler();
-                 return sio::async::write_some(socket, std::span(buffer)) //
-                      | ex::timeout(scheduler, std::chrono::seconds(10))  //
-                      | ex::let_stopped(handle_timeout)                   //
-                      | ex::then(update_state)                            //
-                      | ex::repeat_effect_until();
-               });
-      }
-    };
-  } // namespace _send_response
-
-  inline constexpr _send_response::send_response_t send_response{};
+  ex::sender auto send_response(const tcp_socket& socket, http1_client_response& resp) noexcept;
 
   namespace _start_server {
     template <http1_request_concept Request>

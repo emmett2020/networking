@@ -397,7 +397,7 @@ namespace net::http::http1 {
     using cpointer = const byte_t*;
 
    public:
-    explicit message_parser(Message* message) noexcept
+    explicit message_parser(Message* message = nullptr) noexcept
       : message_(message) {
       inner_name_.reserve(8192);
     }

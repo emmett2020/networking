@@ -91,6 +91,7 @@ namespace net::http::http1 {
     std::string body;
     std::size_t content_length = 0;
     headers_t headers;
+    http_metric metrics{};
   };
 
 } // namespace net::http::http1
