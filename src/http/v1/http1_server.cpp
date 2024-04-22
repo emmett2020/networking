@@ -18,6 +18,7 @@
 #include "http/v1/http1_server.h"
 #include "http/v1/http1_request.h"
 #include "http/v1/http1_response.h"
+#include "stdexec/execution.hpp"
 
 namespace net::http::http1 {
 
@@ -47,9 +48,7 @@ namespace net::http::http1 {
       ex::just_error(error::end_of_stream));
   };
 
-  ex::sender auto parse_request(
-    message_parser<http1_client_request>& parser,
-    util::flat_buffer<8192>& buffer) noexcept {
+  ex::sender auto parse_request(parser_t& parser, util::flat_buffer<8192>& buffer) noexcept {
     return ex::just_from_expected([&] { return parser.parse(buffer.rbuffer()); })
          | ex::then([&](std::size_t parsed_size) {
              buffer.consume(parsed_size);
@@ -87,7 +86,7 @@ namespace net::http::http1 {
                   | ex::let_value(parse_request)                         //
                   | ex::then([&] { return parser.is_completed(); })      //
                   | ex::repeat_effect_until()                            //
-                  | ex::let_value([&] { return ex::just(std::move(request)); });
+                  | ex::then([&] { return std::move(request); });
            });
   }
 
@@ -100,29 +99,66 @@ namespace net::http::http1 {
     return ex::just(std::move(response));
   }
 
-  ex::sender auto send_response(const tcp_socket& socket, http1_client_response&& resp) noexcept {
-    return ex::just_from_expected([&resp] { return resp.to_string(); })
-         | ex::then([&resp](std::string& data) { return data + resp.body; })
-         | ex::let_value([](std::string& data) {
-             return ex::just(std::make_tuple(std::as_bytes(std::span(data)), 120s));
-           })
-         | ex::let_value([&](auto& state) {
-             auto& [buffer, remaining_time] = state;
-             auto scheduler = socket.context_->get_scheduler();
-             return sio::async::write_some(socket, buffer) //
-                  | ex::timeout(scheduler, remaining_time)
-                  | ex::stopped_as_error(std::error_code(error::send_timeout))
-                  | ex::then([&](auto start_time, auto stop_time, std::size_t write_size) {
-                      resp.metrics.update_time(start_time, stop_time);
-                      resp.metrics.update_size(write_size);
-                      remaining_time = 120s;
-                      assert(write_size <= buffer.size());
-                      buffer = buffer.subspan(write_size);
-                    })
-                  | ex::then([] { return buffer.empty(); }) //
-                  | ex::repeat_effect_until();
-           });
+  ex::sender auto
+    send_response(const tcp_socket& socket, http1_client_response&& response) noexcept {
+    return ex::let_value(ex::just(), [&socket, resp = std::move(response)] mutable {
+      return ex::just_from_expected([&resp] { return resp.to_string(); })
+           | ex::then([&resp](std::string& data) { return data + resp.body; })
+           | ex::let_value([](std::string& data) {
+               return ex::just(std::make_tuple(std::as_bytes(std::span(data)), 120s));
+             })
+           | ex::let_value([&](auto& state) {
+               auto& [buffer, remaining_time] = state;
+               auto scheduler = socket.context_->get_scheduler();
+
+               // Update necessary information once write operation completed.
+               auto update_state = [&](auto start_time, auto stop_time, std::size_t write_size) {
+                 resp.metrics.update_time(start_time, stop_time);
+                 resp.metrics.update_size(write_size);
+                 remaining_time = 120s;
+                 assert(write_size <= buffer.size());
+                 buffer = buffer.subspan(write_size);
+               };
+
+               return sio::async::write_some(socket, buffer)                     //
+                    | ex::timeout(scheduler, remaining_time)                     //
+                    | ex::stopped_as_error(std::error_code(error::send_timeout)) //
+                    | ex::then(update_state)                                     //
+                    | ex::then([] { return buffer.empty(); })                    //
+                    | ex::repeat_effect_until()                                  //
+                    | ex::then([&] { return std::move(resp); });
+             });
+    });
   }
+
+  // ex::sender auto send_response(const tcp_socket& socket, http1_client_response&& resp) noexcept {
+  //   return ex::just_from_expected([&resp] { return resp.to_string(); })
+  //        | ex::then([&resp](std::string& data) { return data + resp.body; })
+  //        | ex::let_value([](std::string& data) {
+  //            return ex::just(std::make_tuple(std::as_bytes(std::span(data)), 120s));
+  //          })
+  //        | ex::let_value([&](auto& state) {
+  //            auto& [buffer, remaining_time] = state;
+  //            auto scheduler = socket.context_->get_scheduler();
+  //
+  //            // Update necessary information once write operation completed.
+  //            auto update_state = [&](auto start_time, auto stop_time, std::size_t write_size) {
+  //              resp.metrics.update_time(start_time, stop_time);
+  //              resp.metrics.update_size(write_size);
+  //              remaining_time = 120s;
+  //              assert(write_size <= buffer.size());
+  //              buffer = buffer.subspan(write_size);
+  //            };
+  //
+  //            return sio::async::write_some(socket, buffer)                     //
+  //                 | ex::timeout(scheduler, remaining_time)                     //
+  //                 | ex::stopped_as_error(std::error_code(error::send_timeout)) //
+  //                 | ex::then(update_state)                                     //
+  //                 | ex::then([] { return buffer.empty(); })                    //
+  //                 | ex::repeat_effect_until()                                  //
+  //                 | ex::then([&] { return std::move(resp); });
+  //          });
+  // }
 
   bool need_keepalive(const http1_client_request& request) noexcept {
     if (request.headers.contains(http_header_connection)) {
@@ -134,16 +170,20 @@ namespace net::http::http1 {
     return false;
   }
 
-  auto handle_error(auto e) noexcept {
-    using E = decltype(e);
-    if constexpr (std::same_as<E, std::error_code>) {
-      std::cout << "Error orrcurred: " << std::forward<E>(e).message() << "\n";
-    } else if constexpr (std::same_as<E, std::exception_ptr>) {
-      std::cout << "Error orrcurred: exception_ptr\n";
-    } else {
-      std::cout << "Unknown Error orrcurred\n";
+  struct handle_error_t {
+    auto operator()(auto e) noexcept {
+      using E = decltype(e);
+      if constexpr (std::same_as<E, std::error_code>) {
+        std::cout << "Error orrcurred: " << std::forward<E>(e).message() << "\n";
+      } else if constexpr (std::same_as<E, std::exception_ptr>) {
+        std::cout << "Error orrcurred: exception_ptr\n";
+      } else {
+        std::cout << "Unknown Error orrcurred\n";
+      }
     }
-  }
+  };
+
+  inline constexpr handle_error_t handle_error{};
 
   void start_server(server& s) noexcept {
     auto handles = sio::async::use_resources(
