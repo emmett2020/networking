@@ -22,8 +22,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <span>
-#include <string>
 #include <exception>
 #include <tuple>
 #include <type_traits>
@@ -36,20 +34,13 @@
 #include <exec/linux/io_uring_context.hpp>
 #include <exec/timed_scheduler.hpp>
 #include <exec/repeat_effect_until.hpp>
+#include <sio/io_concepts.hpp>
+#include <stdexec/execution.hpp>
 
-#include "expected.h"
 #include "http/v1/http1_request.h"
-#include "sio/io_concepts.hpp"
-#include "stdexec/execution.hpp"
-#include "utils/timeout.h"
-#include "utils/if_then_else.h"
 #include "utils/flat_buffer.h"
-#include "utils/just_from_expected.h"
-#include "http/http_common.h"
-#include "http/http_error.h"
 #include "http/v1/http1_message_parser.h"
 #include "http/v1/http1_response.h"
-#include "http/http_concept.h"
 
 namespace ex {
   using namespace stdexec; // NOLINT
