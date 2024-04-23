@@ -18,6 +18,7 @@
 
 #include "exec/linux/io_uring_context.hpp"
 
+#include "utils/flat_buffer.h"
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
 #include "utils/just_from_expected.h"
@@ -84,50 +85,17 @@ namespace net::http::http1 {
                remaining_time -= std::chrono::duration_cast<std::chrono::seconds>(start - stop);
              };
 
-             return ex::just();
-
-             // return sio::async::read_some(socket, buffer.wbuffer())      //
-             //      | ex::let_value(check_received_size)                   //
-             //      | ex::timeout(scheduler, remaining_time)               //
-             //      | ex::stopped_as_error(detailed_error(parser.state())) //
-             //      | ex::then(update_state)                               //
-             //      | ex::let_value(parse_request)                         //
-             //      | ex::then([&] { return parser.is_completed(); })      //
-             //      | ex::repeat_effect_until()                            //
-             //      | ex::then([&] { return std::move(request); });
+             return sio::async::read_some(socket, buffer.wbuffer())              //
+                  | ex::let_value(check_received_size)                           //
+                  | ex::timeout(scheduler, remaining_time)                       //
+                  | ex::stopped_as_error(detailed_error(parser.state()))         //
+                  | ex::then(update_state)                                       //
+                  | ex::let_value([&] { return parse_request(parser, buffer); }) //
+                  | ex::then([&] { return parser.is_completed(); })              //
+                  | ex::repeat_effect_until()                                    //
+                  | ex::then([&] { return std::move(request); });
            });
   }
-
-  // ex::sender auto recv_request(const tcp_socket& socket) noexcept {
-  //   using state_t =
-  //     std::tuple< http1_client_request, parser_t, util::flat_buffer<8192>, std::chrono::seconds>;
-  //
-  //   return ex::just(state_t{}) //
-  //        | ex::let_value([&](state_t& state) {
-  //            auto& [request, parser, buffer, remaining_time] = state;
-  //            parser.reset(&request);
-  //            remaining_time = std::chrono::seconds{120};
-  //            auto scheduler = socket.context_->get_scheduler();
-  //
-  //            // Update necessary information once receive operation completed.
-  //            auto update_state = [&](auto start, auto stop, std::size_t recv_size) {
-  //              request.metric.update_time(start, stop);
-  //              request.metric.update_size(recv_size);
-  //              buffer.commit(recv_size);
-  //              remaining_time -= std::chrono::duration_cast<std::chrono::seconds>(start - stop);
-  //            };
-  //
-  //            return sio::async::read_some(socket, buffer.wbuffer())      //
-  //                 | ex::let_value(check_received_size)                   //
-  //                 | ex::timeout(scheduler, remaining_time)               //
-  //                 | ex::stopped_as_error(detailed_error(parser.state())) //
-  //                 | ex::then(update_state)                               //
-  //                 | ex::let_value(parse_request)                         //
-  //                 | ex::then([&] { return parser.is_completed(); })      //
-  //                 | ex::repeat_effect_until()                            //
-  //                 | ex::then([&] { return std::move(request); });
-  //          });
-  // }
 
   ex::sender auto handle_request(const http1_client_request& request) noexcept {
     http1_client_response response{};
@@ -163,7 +131,7 @@ namespace net::http::http1 {
                     | ex::timeout(scheduler, remaining_time)                     //
                     | ex::stopped_as_error(std::error_code(error::send_timeout)) //
                     | ex::then(update_state)                                     //
-                    | ex::then([&] { return buffer.empty(); })                    //
+                    | ex::then([&] { return buffer.empty(); })                   //
                     | ex::repeat_effect_until()                                  //
                     | ex::then([&] { return std::move(resp); });
              });
@@ -198,7 +166,12 @@ namespace net::http::http1 {
   void start_server(server& s) noexcept { // NOLINT
     exec::io_uring_context ctx;
     tcp_socket socket{ctx, 1, sio::ip::tcp::v4()};
-    stdexec::sync_wait(recv_request(socket));
+    auto snd = recv_request(socket)                            //
+             | ex::let_value(handle_request)                   //
+             | ex::let_value([](http1_client_response& resp) { //
+                 return ex::just(std::move(resp));
+               });
+    stdexec::sync_wait(std::move(snd));
   }
 
   // void start_server(server& s) noexcept {
