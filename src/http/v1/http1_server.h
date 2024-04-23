@@ -60,9 +60,10 @@ namespace net::http::http1 {
 
   ex::sender auto recv_request(const tcp_socket& socket) noexcept;
 
-  ex::sender auto handle_request(const http1_client_request& request) noexcept;
-
   ex::sender auto send_response(const tcp_socket& socket, http1_client_response&& resp) noexcept;
+
+
+  ex::sender auto handle_request(const http1_client_request& request) noexcept;
 
   // A http session is a conversation between client and server.
   // We use session id to identify a specific unique conversation.

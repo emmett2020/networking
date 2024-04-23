@@ -110,7 +110,7 @@ namespace net::http::http1 {
     send_response(const tcp_socket& socket, http1_client_response&& response) noexcept {
     return ex::let_value(ex::just(), [&socket, resp = std::move(response)] mutable {
       return ex::just_from_expected([&resp] { return resp.to_string(); })
-           | ex::then([&resp](std::string& data) { return data + resp.body; })
+           | ex::then([&resp](std::string&& data) { return std::move(data) + resp.body; })
            | ex::let_value([](std::string& data) {
                return ex::just(std::make_tuple(std::as_bytes(std::span(data)), 120s));
              })
@@ -126,7 +126,6 @@ namespace net::http::http1 {
                  assert(write_size <= buffer.size());
                  buffer = buffer.subspan(write_size);
                };
-
                return sio::async::write_some(socket, buffer)                     //
                     | ex::timeout(scheduler, remaining_time)                     //
                     | ex::stopped_as_error(std::error_code(error::send_timeout)) //
@@ -163,37 +162,26 @@ namespace net::http::http1 {
 
   inline constexpr handle_error_t handle_error{};
 
-  void start_server(server& s) noexcept { // NOLINT
-    exec::io_uring_context ctx;
-    tcp_socket socket{ctx, 1, sio::ip::tcp::v4()};
-    auto snd = recv_request(socket)                            //
-             | ex::let_value(handle_request)                   //
-             | ex::let_value([](http1_client_response& resp) { //
-                 return ex::just(std::move(resp));
-               });
-    stdexec::sync_wait(std::move(snd));
+  void start_server(server& s) noexcept {
+    auto handles = sio::async::use_resources(
+      [&](server::acceptor_handle_type acceptor) noexcept {
+        return sio::async::accept(acceptor) //
+             | sio::let_value_each([&](server::socket_type socket) {
+                 return ex::just(server::session_type{.socket = socket})   //
+                      | ex::let_value([&](server::session_type& session) { //
+                          return recv_request(session.socket)              //
+                               | ex::let_value(handle_request)             //
+                               | ex::let_value([&](http1_client_response& resp) {
+                                   return send_response(session.socket, std::move(resp));
+                                 })
+                               | ex::upon_error(handle_error);
+                        });
+               })
+             | sio::ignore_all();
+      },
+      s.acceptor);
+    ex::sync_wait(exec::when_any(handles, s.context.run()));
   }
-
-  // void start_server(server& s) noexcept {
-  //   auto handles = sio::async::use_resources(
-  //     [&](server::acceptor_handle_type acceptor) noexcept {
-  //       return sio::async::accept(acceptor) //
-  //            | sio::let_value_each([&](server::socket_type socket) {
-  //                return ex::just(server::session_type{.socket = socket})   //
-  //                     | ex::let_value([&](server::session_type& session) { //
-  //                         return recv_request(session.socket)              //
-  //                              | ex::let_value(handle_request)             //
-  //                              | ex::let_value([&](http1_client_response&& resp) {
-  //                                  return send_response(session.socket, std::move(resp));
-  //                                })
-  //                              | ex::upon_error(handle_error);
-  //                       });
-  //              })
-  //            | sio::ignore_all();
-  //     },
-  //     s.acceptor);
-  //   ex::sync_wait(exec::when_any(handles, s.context.run()));
-  // }
 
 
 } // namespace net::http::http1
