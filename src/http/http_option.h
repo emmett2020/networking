@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -19,33 +19,16 @@
 #include <chrono>
 
 namespace net::http {
+  using http_duration = std::chrono::microseconds;
+  static constexpr auto unlimited_timeout = http_duration::max();
 
-  template <class Dur>
   struct http_recv_option {
-    using duration_t = Dur;
-    static constexpr auto unlimited_timeout = duration_t::max();
-    duration_t total_timeout{0};
-    duration_t keepalive_timeout{0};
+    http_duration total_timeout{0};
+    http_duration keepalive_timeout{0};
   };
 
-  template <class Dur>
   struct http_send_option {
-    using duration_t = Dur;
-    static constexpr auto unlimited_timeout = duration_t::max();
-    duration_t total_timeout{0};
-  };
-
-  struct http_option {
-    using duration_t = std::chrono::seconds;
-    static constexpr auto unlimited_timeout = duration_t::max();
-
-    static constexpr auto recv_option() noexcept {
-      return http_recv_option<duration_t>{};
-    }
-
-    static constexpr auto send_option() noexcept {
-      return http_send_option<duration_t>{};
-    }
+    http_duration total_timeout{0};
   };
 
 } // namespace net::http

@@ -30,13 +30,11 @@ namespace net::http::http1 {
   template <
     http_message_direction Direction,
     http_text_encoding Encoding = http_text_encoding::utf_8,
-    http1_metric_concept Metric = http_metric,
-    http1_option_concept Option = http_option>
+    http1_metric_concept Metric = http_metric >
   struct request {
     using params_t = std::multimap<std::string, std::string>;
     using headers_t = std::multimap<std::string, std::string, util::case_insensitive_compare>;
     using metric_t = Metric;
-    using option_t = Option;
 
     static constexpr http_message_direction direction() noexcept {
       return Direction;
@@ -48,9 +46,9 @@ namespace net::http::http1 {
 
     static constexpr auto socket_option() noexcept {
       if constexpr (direction() == http_message_direction::receive_from_client) {
-        return option_t::recv_option();
+        return http_recv_option{};
       } else {
-        return option_t::send_option();
+        return http_send_option{};
       }
     }
 

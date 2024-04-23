@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "http/http_option.h"
 #include "stdexec/execution.hpp"
 
 #include "exec/linux/io_uring_context.hpp"
@@ -23,18 +24,17 @@
 #include "utils/if_then_else.h"
 #include "utils/just_from_expected.h"
 #include "http/v1/http1_server.h"
+#include <exception>
 #include "http/v1/http1_request.h"
 #include "http/v1/http1_response.h"
 #include "http/http_common.h"
 #include "http/http_error.h"
-#include "http/http_concept.h"
-#include "expected.h"
 
 namespace net::http::http1 {
 
-  // Get detailed error enum by message parser state.
-  inline http::error detailed_error(http1_parse_state s) noexcept {
-    switch (s) {
+  // Get detailed error by message parser state.
+  inline http::error detailed_error(http1_parse_state state) noexcept {
+    switch (state) {
     case http1_parse_state::nothing_yet:
       return error::recv_request_timeout_with_nothing;
     case http1_parse_state::start_line:
@@ -49,8 +49,8 @@ namespace net::http::http1 {
     }
   }
 
-  // Check the transferred bytes size. If it's zero,
-  // then error::end_of_stream will be sent to downstream receiver.
+  // Check the transferred bytes size. If it's zero, then error::end_of_stream
+  // will be sent to downstream receiver.
   inline auto check_received_size(std::size_t sz) noexcept {
     return ex::if_then_else(
       sz != 0, //
@@ -58,7 +58,7 @@ namespace net::http::http1 {
       ex::just_error(error::end_of_stream));
   };
 
-  ex::sender auto parse_request(parser_t& parser, util::flat_buffer<8192>& buffer) noexcept {
+  ex::sender auto parse_request(parser_t& parser, flat_buffer& buffer) noexcept {
     return ex::just_from_expected([&] { return parser.parse(buffer.rbuffer()); })
          | ex::then([&](std::size_t parsed_size) {
              buffer.consume(parsed_size);
@@ -67,27 +67,26 @@ namespace net::http::http1 {
   }
 
   ex::sender auto recv_request(const tcp_socket& socket) noexcept {
-    using state_t =
-      std::tuple< http1_client_request, parser_t, util::flat_buffer<8192>, std::chrono::seconds>;
+    using state_t = std::tuple< http1_client_request, parser_t, flat_buffer, http_duration>;
 
     return ex::just(state_t{}) //
          | ex::let_value([&](state_t& state) {
-             auto& [request, parser, buffer, remaining_time] = state;
-             parser.reset(&request);
-             remaining_time = std::chrono::seconds{120};
+             auto& [request, parser, buffer, timeout] = state;
+             parser.set(&request);
+             timeout = http1_client_request::socket_option().total_timeout;
              auto scheduler = socket.context_->get_scheduler();
 
              // Update necessary information once receive operation completed.
-             auto update_state = [&](auto start, auto stop, std::size_t recv_size) {
-               request.metric.update_time(start, stop);
+             auto update_state = [&](auto start_time, auto stop_time, std::size_t recv_size) {
+               request.metric.update_time(start_time, stop_time);
                request.metric.update_size(recv_size);
                buffer.commit(recv_size);
-               remaining_time -= std::chrono::duration_cast<std::chrono::seconds>(start - stop);
+               timeout -= std::chrono::duration_cast<http_duration>(start_time - stop_time);
              };
 
              return sio::async::read_some(socket, buffer.wbuffer())              //
                   | ex::let_value(check_received_size)                           //
-                  | ex::timeout(scheduler, remaining_time)                       //
+                  | ex::timeout(scheduler, timeout)                              //
                   | ex::stopped_as_error(detailed_error(parser.state()))         //
                   | ex::then(update_state)                                       //
                   | ex::let_value([&] { return parse_request(parser, buffer); }) //
@@ -111,7 +110,7 @@ namespace net::http::http1 {
     return ex::let_value(ex::just(), [&socket, resp = std::move(response)] mutable {
       return ex::just_from_expected([&resp] { return resp.to_string(); })
            | ex::then([&resp](std::string&& data) { return std::move(data) + resp.body; })
-           | ex::let_value([](std::string& data) {
+           | ex::let_value([](std::string& data) { // TODO: does this safe?
                return ex::just(std::make_tuple(std::as_bytes(std::span(data)), 120s));
              })
            | ex::let_value([&](auto& state) {
@@ -122,10 +121,12 @@ namespace net::http::http1 {
                auto update_state = [&](auto start_time, auto stop_time, std::size_t write_size) {
                  resp.metrics.update_time(start_time, stop_time);
                  resp.metrics.update_size(write_size);
-                 remaining_time = 120s;
-                 assert(write_size <= buffer.size());
+                 remaining_time = 120s;               // TODO: update remaining_time
+                 assert(write_size <= buffer.size()); // TODO: assert?
                  buffer = buffer.subspan(write_size);
                };
+
+               // TODO: should give detailed timeout error message not just send_timeout
                return sio::async::write_some(socket, buffer)                     //
                     | ex::timeout(scheduler, remaining_time)                     //
                     | ex::stopped_as_error(std::error_code(error::send_timeout)) //
@@ -148,20 +149,26 @@ namespace net::http::http1 {
   }
 
   struct handle_error_t {
-    auto operator()(auto e) noexcept {
-      using E = decltype(e);
+    template <typename E>
+    auto operator()(E e) noexcept {
       if constexpr (std::same_as<E, std::error_code>) {
-        std::cout << "Error orrcurred: " << std::forward<E>(e).message() << "\n";
+        fmt::println("Error: {}", e.message());
       } else if constexpr (std::same_as<E, std::exception_ptr>) {
-        std::cout << "Error orrcurred: exception_ptr\n";
+        try {
+          std::rethrow_exception(e);
+        } catch (const std::exception& ptr) {
+          fmt::println("Error: {}", ptr.what());
+        }
       } else {
-        std::cout << "Unknown Error orrcurred\n";
+        fmt::println("Unknown error!");
       }
     }
   };
 
   inline constexpr handle_error_t handle_error{};
 
+  // TODO: do we really need session
+  // TODO: do we need to return a sender?
   void start_server(server& s) noexcept {
     auto handles = sio::async::use_resources(
       [&](server::acceptor_handle_type acceptor) noexcept {

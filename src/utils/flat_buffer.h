@@ -25,6 +25,7 @@
 namespace net::util {
 
   /*
+ *
  * flat_buffer:
  * --------------------------------------------------
  * |          | readable region | writable region   |

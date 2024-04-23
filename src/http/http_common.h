@@ -444,6 +444,7 @@ namespace net::http {
     return magic_enum::enum_cast<http_status_code>(value).value_or(http_status_code::unknown);
   }
 
+  // TODO: put into net::http::headers namespace then simplify headers name?
   static constexpr std::string_view http_header_host = "Host";
   static constexpr std::string_view http_header_content_length = "Content-Length";
   static constexpr std::string_view http_header_if_modified_since = "If-Modified-Since";

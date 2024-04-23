@@ -402,6 +402,10 @@ namespace net::http::http1 {
       inner_name_.reserve(8192);
     }
 
+    void set(Message* message) noexcept {
+      message_ = message;
+    }
+
     void reset(Message* message) noexcept {
       message_ = message;
       reset();

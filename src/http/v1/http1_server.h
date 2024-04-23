@@ -48,21 +48,25 @@ namespace ex {
 }
 
 // TODO: APIs should be constraint by sender_of concept
+// TODO: refine headers
 
 namespace net::http::http1 {
 
   using namespace std::chrono_literals;
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
   using parser_t = message_parser<http1_client_request>;
+  using flat_buffer = util::flat_buffer<65535>; // TODO: dynamic_flat_buffer?
 
-  // Parse HTTP request uses receive buffer.
-  ex::sender auto parse_request(parser_t& parser, util::flat_buffer<8192>& buffer) noexcept;
+  // Parse HTTP request uses received flat buffer.
+  ex::sender auto parse_request(parser_t& parser, flat_buffer& buffer) noexcept;
 
+  // Receive a completed request from given socket.
   ex::sender auto recv_request(const tcp_socket& socket) noexcept;
 
+  // Send respopnse to given socket.
   ex::sender auto send_response(const tcp_socket& socket, http1_client_response&& resp) noexcept;
 
-
+  // Handle http request then request response.
   ex::sender auto handle_request(const http1_client_request& request) noexcept;
 
   // A http session is a conversation between client and server.
