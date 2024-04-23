@@ -28,7 +28,6 @@ int main() {
   fmt::println("start listening on {}:{}", ip, port);
   ex::io_uring_context context;
   net::http::server server{context, ip, port};
-  ex::sender auto handles = net::http::start_server(server);
-  ex::sync_wait(exec::when_any(handles, context.run()));
+  net::http::start_server(server);
   return 0;
 }

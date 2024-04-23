@@ -74,8 +74,6 @@ namespace net::http::http1 {
 
     id_type id{make_session_id()};
     tcp_socket socket;
-    http1_client_request request{};
-    http1_client_response response{};
     std::size_t reuse_cnt{0};
   };
 
@@ -244,8 +242,7 @@ namespace net::http::http1 {
 
   inline constexpr handle_error_t handle_error{};
 
-  // TODO: do we really need session
-  inline ex::sender auto start_server(server& s) noexcept {
+  inline void start_server(server& s) noexcept {
     auto handles = sio::async::use_resources(
       [&](server::acceptor_handle_t acceptor) noexcept {
         return sio::async::accept(acceptor) //
@@ -263,8 +260,7 @@ namespace net::http::http1 {
              | sio::ignore_all();
       },
       s.acceptor);
-    return handles;
-    // ex::sync_wait(exec::when_any(handles, s.context.run()));
+    ex::sync_wait(exec::when_any(handles, s.context.run()));
   }
 
 } // namespace net::http::http1
