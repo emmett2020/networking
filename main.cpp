@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
+#include <thread>
+
 #include <fmt/format.h>
 #include <stdexec/execution.hpp>
+#include <exec/linux/io_uring_context.hpp>
 
 #include "http/http1.h"
 
@@ -23,7 +26,9 @@ int main() {
   constexpr std::string_view ip = "127.0.0.1";
   constexpr net::http::port_t port = 8080;
   fmt::println("start listening on {}:{}", ip, port);
-  net::http::server server{ip, port};
-  net::http::start_server(server);
+  ex::io_uring_context context;
+  net::http::server server{context, ip, port};
+  ex::sender auto handles = net::http::start_server(server);
+  ex::sync_wait(exec::when_any(handles, context.run()));
   return 0;
 }
