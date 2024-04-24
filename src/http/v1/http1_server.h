@@ -104,7 +104,7 @@ namespace net::http::http1 {
   };
 
   // Get detailed error by message parser state.
-  inline http::error detailed_error(http1_parse_state state) noexcept {
+  inline std::error_code detailed_error(http1_parse_state state) noexcept {
     switch (state) {
     case http1_parse_state::nothing_yet:
       return error::recv_request_timeout_with_nothing;
