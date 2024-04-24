@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <execution>
 #include <tuple>
 #include <utility>
 
@@ -104,8 +105,9 @@ namespace net::http::http1 {
   };
 
   // Get detailed error by message parser state.
-  inline std::error_code detailed_error(http1_parse_state state) noexcept {
-    switch (state) {
+  inline std::error_code detailed_error(const parser_t& parser) noexcept {
+    fmt::println("error: {}", (int) parser.state()); // DEBUG
+    switch (parser.state()) {
     case http1_parse_state::nothing_yet:
       return error::recv_request_timeout_with_nothing;
     case http1_parse_state::start_line:
@@ -150,6 +152,7 @@ namespace net::http::http1 {
                timeout = http1_client_request::socket_option().keepalive_timeout;
              } else {
                timeout = http1_client_request::socket_option().total_timeout;
+               timeout = 5s;
              }
              auto scheduler = socket.context_->get_scheduler();
 
@@ -161,14 +164,14 @@ namespace net::http::http1 {
                timeout -= std::chrono::duration_cast<http_duration>(start_time - stop_time);
              };
 
-             return sio::async::read_some(socket, buffer.wbuffer())              //
-                  | ex::let_value(check_received_size)                           //
-                  | ex::timeout(scheduler, timeout)                              //
-                  | ex::stopped_as_error(detailed_error(parser.state()))         //
-                  | ex::then(update_state)                                       //
-                  | ex::let_value([&] { return parse_request(parser, buffer); }) //
-                  | ex::then([&] { return parser.is_completed(); })              //
-                  | ex::repeat_effect_until()                                    //
+             return sio::async::read_some(socket, buffer.wbuffer())                         //
+                  | ex::let_value(check_received_size)                                      //
+                  | ex::timeout(scheduler, timeout)                                         //
+                  | ex::let_stopped([&] { return ex::just_error(detailed_error(parser)); }) //
+                  | ex::then(update_state)                                                  //
+                  | ex::let_value([&] { return parse_request(parser, buffer); })            //
+                  | ex::then([&] { return parser.is_completed(); })                         //
+                  | ex::repeat_effect_until()                                               //
                   | ex::then([&] { return std::move(request); });
            });
   }
