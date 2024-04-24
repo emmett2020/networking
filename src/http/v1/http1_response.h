@@ -90,6 +90,7 @@ namespace net::http::http1 {
     std::size_t content_length = 0;
     headers_t headers;
     http_metric metrics{};
+    bool need_keepalive = true;
   };
 
 } // namespace net::http::http1

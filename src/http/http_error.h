@@ -110,14 +110,20 @@ namespace net::http {
         return "bad line ending";
       case error::empty_method:
         return "empty method";
+      case error::unknown_method:
+        return "unknown method";
       case error::bad_method:
         return "bad method";
       case error::bad_uri:
         return "bad uri";
       case error::bad_scheme:
         return "bad scheme";
+      case error::empty_host:
+        return "empty host";
       case error::bad_host:
         return "bad host";
+      case error::too_big_port:
+        return "too big port";
       case error::bad_port:
         return "bad port";
       case error::bad_path:
@@ -126,6 +132,8 @@ namespace net::http {
         return "bad params";
       case error::bad_version:
         return "bad version";
+      case error::unknown_status:
+        return "unknown status";
       case error::bad_status:
         return "bad status";
       case error::bad_reason:
@@ -143,13 +151,17 @@ namespace net::http {
       case error::bad_content_length:
         return "bad Content-Length";
       case error::bad_transfer_encoding:
-        return "bad Transfer-Encoding";
+        return "bad transfer encoding";
+      case error::body_size_bigger_than_content_length:
+        return "body size bigger than content length";
       case error::bad_chunk:
         return "bad chunk";
       case error::bad_chunk_extension:
         return "bad chunk extension";
       case error::bad_obs_fold:
         return "bad obs-fold";
+      case error::empty_content_length:
+        return "empty content length";
       case error::multiple_content_length:
         return "multiple Content-Length";
       case error::stale_parser:
