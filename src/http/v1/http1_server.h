@@ -139,14 +139,18 @@ namespace net::http::http1 {
   }
 
   // Receive a completed request from given socket.
-  inline ex::sender auto recv_request(const tcp_socket& socket) noexcept {
+  inline ex::sender auto recv_request(const tcp_socket& socket, bool keepalive = false) noexcept {
     using state_t = std::tuple< http1_client_request, parser_t, flat_buffer, http_duration>;
 
     return ex::just(state_t{}) //
          | ex::let_value([&](state_t& state) {
              auto& [request, parser, buffer, timeout] = state;
              parser.set(&request);
-             timeout = http1_client_request::socket_option().total_timeout;
+             if (keepalive) {
+               timeout = http1_client_request::socket_option().keepalive_timeout;
+             } else {
+               timeout = http1_client_request::socket_option().total_timeout;
+             }
              auto scheduler = socket.context_->get_scheduler();
 
              // Update necessary information once receive operation completed.

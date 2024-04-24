@@ -19,16 +19,17 @@
 #include <chrono>
 
 namespace net::http {
+  using namespace std::chrono_literals;
   using http_duration = std::chrono::microseconds;
   static constexpr auto unlimited_timeout = http_duration::max();
 
   struct http_recv_option {
-    http_duration total_timeout{0};
-    http_duration keepalive_timeout{0};
+    http_duration total_timeout{600s};
+    http_duration keepalive_timeout{120s};
   };
 
   struct http_send_option {
-    http_duration total_timeout{0};
+    http_duration total_timeout{600s};
   };
 
 } // namespace net::http
