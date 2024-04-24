@@ -25,6 +25,7 @@
 namespace net::util {
 
   /*
+ *
  * flat_buffer:
  * --------------------------------------------------
  * |          | readable region | writable region   |
@@ -46,7 +47,7 @@ namespace net::util {
     }
 
     // Return the number of required minimum writable region size.
-    [[nodiscard]] std::size_t required_size() const noexcept {
+    [[nodiscard]] constexpr std::size_t required_size() const noexcept {
       return Required;
     }
 

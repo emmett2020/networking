@@ -16,8 +16,6 @@
 
 #pragma once
 
-#include <concepts>
-#include <unordered_map>
 #include "http/http_common.h"
 
 namespace net::http {
@@ -58,7 +56,6 @@ namespace net::http {
     { std::convertible_to<decltype(t.reason), std::string> };
     { std::convertible_to<decltype(t.content_length), std::size_t> };
     { http1_headers<decltype(t.headers)> };
-    { http1_parameters<decltype(t.params)> };
   };
 
   template <typename T>

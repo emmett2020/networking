@@ -55,6 +55,7 @@ namespace net::http {
 
     void update_size(std::size_t sz) noexcept {
       size.total += sz;
+      size.count += 1;
     }
   };
 

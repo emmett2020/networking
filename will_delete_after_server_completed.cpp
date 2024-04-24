@@ -1,4 +1,5 @@
 #include <chrono>
+#include "utils/timeout.h"
 using namespace chrono_literal;
 
 // move to sio
@@ -170,3 +171,58 @@ ex::sender auto recv_request(tcp_socket socket) {
        | ex::repeat_effect_until()                                          //
        | ex::then(finished);
 }
+
+return handle_accepetd(socket)           //
+     | let_value(create_session(socket)) //
+       return prepare_recv()
+     | recv_request(socket, session.request)
+     | ex::then([] { update_metrics(session.request.metrics); })
+     | ex::let_value([] { handle_request(session.request, session.response); })
+     | ex::let_value([] { send_response(socket, session.response); })
+     | ex::then([] { update_metrics(session.response.metrics); })
+     | ex::then([] { return check_keepalive(session.request); }) | repeat_effect_until()
+     | update_session() | handle_error();
+
+// Use constexpr virtual
+
+struct server {
+  using request_t = http1_client_rqeuest;
+  using response_t = http1_client_response;
+
+  //TODO: virtual with auto ?
+  // Sender factory
+  constexpr virtual ex::sender auto recv_request(tcp_socket socket) const noexcept {
+    return ex::just(buffer{}, request_t{})                    //
+         | ex::let_value([](buffer& buffer, request_t& req) { //
+             sio::async::read_some(socket, std::span(buffer)) //
+               | ex::let_value(check_recv_size)               //
+               | ex::timeout(10s)                             //
+               | ex::let_value(parse_request)                 //
+               | ex::repeat_effect_until();
+           });
+  }
+
+  // Sender adaptor.
+  constexpr virtual ex::sender auto
+    send_response(const response_t& res, tcp_socket socket) const noexcept {
+    return ex::just()                          //
+         | sio::async::write_some(socket, res) //
+         | ex::repeat_effect_until();
+  }
+
+  // Sender adaptor.
+  constexpr virtual ex::sender auto handle_request(request_t req) const noexcept {
+    return response_t;
+  }
+
+  constexpr virtual start_server() const noexcept {
+    using socket_t = tcp_socket;
+
+    return just(socket_t) //
+         | let_value([](socket_t socket) {
+             return recv_request(socket) //
+                  | handle_request()     //
+                  | send_response(socket);
+           });
+  }
+};

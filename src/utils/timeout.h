@@ -35,7 +35,7 @@ namespace ex {
       auto start = std::chrono::system_clock::now();
       auto alarm = exec::schedule_after(scheduler, timeout) //
                  | stdexec::let_value([] { return stdexec::just_stopped(); });
-      auto task = stdexec::let_value(std::forward(sndr), [&start](auto &&...values) {
+      auto task = stdexec::let_value(std::move(sndr), [&start](auto &&...values) {
         return stdexec::just(start, std::chrono::system_clock::now(), std::move(values)...);
       });
 

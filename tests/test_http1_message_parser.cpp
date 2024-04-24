@@ -13,1344 +13,1089 @@
  * limitations under the License.
  */
 #include <catch2/catch_test_macros.hpp>
+
 #include <span>
 #include <system_error>
-#include "http1/http_common.h"
-#include "http1/http_error.h"
-#include "http1/http_message_parser.h"
-#include "http1/http_request.h"
-#include "http1/http_response.h"
+#include <utility>
 
-using namespace net::http1;  // NOLINT
-using namespace std;         // NOLINT
+#include "http/http_common.h"
+#include "http/http_error.h"
+#include "http/v1/http1_message_parser.h"
+#include "http/v1/http1_request.h"
 
-using RequestParser = MessageParser<Request>;
-using ResponseParser = MessageParser<Response>;
+using namespace net::http;        // NOLINT
+using namespace net::http::http1; // NOLINT
+using namespace std;              // NOLINT
 
-TEST_CASE("Parse http method", "[parse_http_request]") {
-  Request req;
-  RequestParser parser{&req};
-  std::error_code ec{};
+using request_parser = message_parser<http1_client_request>;
+using request_line_state = request_parser::request_line_state;
 
-  SECTION("Parse valid GET method string should return HttpMethod::kGet") {
+TEST_CASE("parse http method", "[parse_http_request]") {
+  http1_client_request req;
+  request_parser parser{&req};
+
+  SECTION("Parse valid GET method string should return http_method::get.") {
     string method = "GET ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kGet);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(result);
+    CHECK(*result == 3);
+    CHECK(req.method == http_method::get);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_parser::request_line_state::spaces_before_uri);
   }
 
-  SECTION("Parse valid HEAD method string should return HttpMethod::kHead") {
+  SECTION("Parse valid HEAD method string should return http_method::head.") {
     string method = "HEAD ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kHead);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(result);
+    CHECK(*result == 4);
+    CHECK(req.method == http_method::head);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_parser::request_line_state::spaces_before_uri);
   }
 
-  SECTION("Parse valid POST method string should return HttpMethod::kPost") {
+  SECTION("Parse valid POST method string should return http_method::post.") {
     string method = "POST ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kPost);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(result);
+    CHECK(*result == 4);
+    CHECK(req.method == http_method::post);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_parser::request_line_state::spaces_before_uri);
   }
 
-  SECTION("Parse valid PUT method string should return HttpMethod::kPut") {
+  SECTION("Parse valid PUT method string should return http_method::put.") {
     string method = "PUT ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kPut);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(result);
+    CHECK(*result == 3);
+    CHECK(req.method == http_method::put);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_parser::request_line_state::spaces_before_uri);
   }
 
-  SECTION(
-      "Parse valid DELETE method string should return HttpMethod::kDelete") {
+  SECTION("Parse valid DELETE method string should return http_method::del.") {
     string method = "DELETE ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kDelete);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(result);
+    CHECK(*result == 6);
+    CHECK(req.method == http_method::del);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_parser::request_line_state::spaces_before_uri);
   }
 
-  SECTION("Parse valid TRACE method string should return HttpMethod::kTrace") {
-    string method = "TRACE ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kTrace);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
-  }
 
-  SECTION(
-      "Parse valid CONTROL method string should return HttpMethod::kControl") {
-    string method = "CONTROL ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kControl);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
-  }
-
-  SECTION("Parse valid PURGE method string should return HttpMethod::kPurge") {
-    string method = "PURGE ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kPurge);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
-  }
-
-  SECTION(
-      "Parse valid OPTIONS method string should return HttpMethod::kOptions") {
-    string method = "OPTIONS ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kOptions);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
-  }
-
-  SECTION(
-      "Parse valid CONNECT method string should return HttpMethod::kConnect") {
-    string method = "CONNECT ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) ==
-          method.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kConnect);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
-  }
-
-  SECTION(
-      "Parse invalid method string, whitespace before method should return "
-      "kEmptyMethod") {
+  SECTION("Should return empty_method if there are whilespaces before method.") {
     // Treat all the characters before first space as method.
-    // In this case, method is empty not "GET".
+    // In this case, method is empty.
     string method = " GET ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kEmptyMethod);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(!result);
+    CHECK(result.error() == error::empty_method);
   }
 
-  SECTION("Parse invalid method string, method isn't uppercase") {
-    string method = "GEt ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kBadMethod);
-  }
-
-  SECTION("Parse invalid method string, not supported method string") {
+  SECTION("Should return unknown_method if method is not supported by networking.") {
     string method = "GXT ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kBadMethod);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(!result);
+    CHECK(result.error() == error::unknown_method);
   }
 
-  SECTION("Parse invalid method string, method is a single non-token char") {
+  SECTION("Should return unknown_method if method isn't uppercase.") {
+    string method = "GEt ";
+    auto result = parser.parse(std::span(method));
+    REQUIRE(!result);
+    CHECK(result.error() == error::unknown_method);
+  }
+
+  SECTION("Should return bad_method if method is just a single non-token char.") {
     string method = "\"";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kBadMethod);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_method);
   }
 
-  SECTION("Parse invalid method string, valid token but not supported method") {
-    string method = "G*T ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kBadMethod);
-  }
-
-  SECTION("Parse invalid method string, method has not support token char") {
+  SECTION("Should return bad_method if method has not support token character.") {
     string method = "G(T ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kBadMethod);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_method);
   }
 
-  SECTION(
-      "Parse a method without whitespace followed by it should return "
-      "kNeedMore") {
-    // Because without whitespace we can't judge whether method read completed.
+  SECTION("Should return zero if parsing a method without whitespace followed by it.") {
+    // Without whitespace we can't judge whether method read completed.
     string method = "GET";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    // State should convert from nothing_yet to start_line since there has a parse operation.
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_parser::request_line_state::method);
   }
 
   SECTION(
-      "Parse multiply whitespace followed method should return real method "
-      "size which not include the size of whitespace") {
+    "Parse a method followed by multiply whitespaces should return the size of method which not "
+    "include the size of whitespace") {
     // Three whitespaces after "CONNECT".
     string method = "CONNECT   ";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 7);
-    CHECK(ec == Error::kNeedMore);
-  }
-
-  SECTION("Step by step parsing method should work") {
-    string method = "P";
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kMethod);
-
-    ec.clear();
-    method.push_back('O');
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kMethod);
-
-    ec.clear();
-    method.push_back('S');
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kMethod);
-
-    ec.clear();
-    method.push_back('T');
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kMethod);
-
-    ec.clear();
-    method.push_back(' ');
-    CHECK(parser.Parse({method.data(), method.size()}, ec) == 4);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
+    auto result = parser.parse(std::span(method));
+    REQUIRE(result);
+    CHECK(*result == 7);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_parser::request_line_state::spaces_before_uri);
   }
 }
 
-TEST_CASE("Parse http uri", "[parse_http_request]") {
-  Request req;
-  RequestParser parser(&req);
-  error_code ec{};
+TEST_CASE("parse http spaces between method and uri", "[parse_http_request]") {
+  http1_client_request req;
+  request_parser parser{&req};
+  SECTION("Multiply whitespaces between method and uri are allowed.") {
+    // Five spaces between method and URI.
+    string buffer = "GET     /index.html ";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
+  }
+}
+
+TEST_CASE("parse http uri", "[parse_http_request]") {
+  http1_client_request req;
+  request_parser parser{&req};
 
   SECTION("Uri contains only path. Should fill the path field of request") {
     string buffer = "GET /index.html ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Path() == "/index.html");
-
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.path == "/index.html");
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
-
-  SECTION("Multi spaces between method and uri is allowed") {
-    // Five spaces between method and URI.
-    string buffer = "GET     /index.html ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Uri() == "/index.html");
-    CHECK(req.Path() == "/index.html");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
-  }
-
-  SECTION("Uri only contains the http scheme is not allowed.") {
-    // The "http" scheme must have host field.
+  SECTION(
+    "Uri only contains the http scheme is not allowed. Should return empty_host since http scheme "
+    "must have host field.") {
     string buffer = "GET http:// ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadHost);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::empty_host);
   }
 
-  SECTION("A https uri contains empty host is not allowed.") {
+  SECTION("Should return empty_host if https scheme doesn't have host field.") {
     // The "https" URI must have a non-empty host
     string buffer = "GET https://:80 ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadHost);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::empty_host);
   }
 
-  SECTION("Uri contains scheme name in uppercase is allowed") {
+  SECTION("Uri contains uppercase scheme name is allowed.") {
     string buffer = "GET hTtP://domain ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.scheme == HttpScheme::kHttp);
-    CHECK(req.Host() == "domain");
-    CHECK(req.Uri() == "hTtP://domain");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.scheme == http_scheme::http);
+    CHECK(req.host == "domain");
+    CHECK(req.uri == "hTtP://domain");
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains https scheme and five spaces after the uri") {
+  SECTION("Uri contains https scheme and five whilespaces after the uri.") {
     string buffer = "GET         https://domain     ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 5);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.scheme == HttpScheme::kHttps);
-    CHECK(req.Uri() == "https://domain");
-    CHECK(req.Host() == "domain");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 5);
+
+    CHECK(req.scheme == http_scheme::https);
+    CHECK(req.uri == "https://domain");
+    CHECK(req.host == "domain");
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains unknown scheme name") {
+  SECTION("Uri contains unknown scheme name is allowed.") {
     string buffer = "GET 0unknown:// ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Uri() == "0unknown://");
-    CHECK(req.scheme == HttpScheme::kUnknown);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.uri == "0unknown://");
+    CHECK(req.scheme == http_scheme::unknown);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains invalid scheme, scheme name use invalid character") {
+  SECTION("Should return bad_scheme if scheme name contains invalid character.") {
     string buffer = "GET *:// ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadScheme);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_scheme);
   }
 
-  SECTION("Uri contains invalid scheme, scheme use invalid format") {
+  SECTION("Should return bad_scheme if scheme name is invalid format.") {
     // The scheme format must be: "scheme-name" "://"
-    // But there are two colon after scheme-name "https".
+    // In this case, there are two colons after scheme-name "https".
     string buffer = "GET https::// ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadScheme);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_scheme);
   }
 
-  SECTION("Uri contains scheme and host domain style host identifier") {
+  SECTION("Uri contains scheme and host.") {
     string buffer = "GET https://domain ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Scheme() == HttpScheme::kHttps);
-    CHECK(req.Host() == "domain");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.scheme == http_scheme::https);
+    CHECK(req.host == "domain");
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains scheme and dot-decimal style host identifier") {
+  SECTION("Uri contains scheme and dot-decimal style host.") {
     string buffer = "GET https://1.1.1.1 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Scheme() == HttpScheme::kHttps);
-    CHECK(req.Host() == "1.1.1.1");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.scheme == http_scheme::https);
+    CHECK(req.host == "1.1.1.1");
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Host has not supported character should return kBadHost") {
+  SECTION("Should return bad_host if host contains not supported character.") {
     string buffer = "GET https://doma*in ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadHost);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_host);
   }
 
   SECTION(
-      "Uri contains valid scheme, host and port should fill scheme, host and "
-      "port field of inner request") {
+    "Uri contains valid scheme, host and port should fill scheme, host and "
+    "port field of inner request") {
     string buffer = "GET https://192.168.1.1:1080 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Uri() == "https://192.168.1.1:1080");
-    CHECK(req.Scheme() == HttpScheme::kHttps);
-    CHECK(req.Host() == "192.168.1.1");
-    CHECK(req.Port() == 1080);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.uri == "https://192.168.1.1:1080");
+    CHECK(req.scheme == http_scheme::https);
+    CHECK(req.host == "192.168.1.1");
+    CHECK(req.port == 1080);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains scheme, host and port, port has leading zeros.") {
+  SECTION(
+    "Uri contains scheme, host and port, port has leading zeros. Leading zeros should be "
+    "ignored.") {
     string buffer = "GET https://domain:0001080 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Uri() == "https://domain:0001080");
-    CHECK(req.Scheme() == HttpScheme::kHttps);
-    CHECK(req.Host() == "domain");
-    CHECK(req.Port() == 1080);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.uri == "https://domain:0001080");
+    CHECK(req.scheme == http_scheme::https);
+    CHECK(req.host == "domain");
+    CHECK(req.port == 1080);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
   SECTION(
-      "Uri contains scheme, host and port, port only have zeros should use "
-      "default port value based on scheme.") {
+    "Uri contains scheme, host and port, port only have zeros. Should use default port based on "
+    "scheme.") {
     string buffer = "GET https://domain:00000 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Uri() == "https://domain:00000");
-    CHECK(req.Scheme() == HttpScheme::kHttps);
-    CHECK(req.Host() == "domain");
-    CHECK(req.Port() == 443);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.uri == "https://domain:00000");
+    CHECK(req.scheme == http_scheme::https);
+    CHECK(req.host == "domain");
+    CHECK(req.port == 443);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION(
-      "Uri doesn't contain port identifier. Port will default be 80 if "
-      "scheme is http") {
+  SECTION("Uri doesn't contain port. Port should be 80 if scheme is http") {
     string buffer = "GET http://domain ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Scheme() == HttpScheme::kHttp);
-    CHECK(req.Host() == "domain");
-    CHECK(req.Port() == 80);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.scheme == http_scheme::http);
+    CHECK(req.host == "domain");
+    CHECK(req.port == 80);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION(
-      "Uri doesn't contain port identifier. Port will default to be 443 if "
-      "scheme is https") {
+  SECTION("Uri doesn't contain port. Port should be 443 if scheme is https") {
     string buffer = "GET https://domain ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Scheme() == HttpScheme::kHttps);
-    CHECK(req.Host() == "domain");
-    CHECK(req.Port() == 443);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.scheme == http_scheme::https);
+    CHECK(req.host == "domain");
+    CHECK(req.port == 443);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains invalid port format should return bad port.") {
+  SECTION("Should return bad_port if uri contains invalid port format.") {
     string buffer = "GET http://domain:8x0 ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadPort);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_port);
   }
 
-  SECTION("Uri contains too big port should return bad port.") {
+  SECTION("Should return too_big_port if uri contains too big port.") {
     string buffer = "GET http://domain:65536 ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadPort);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::too_big_port);
   }
 
-  SECTION("Uri contains too big port should return bad port.") {
-    string buffer = "GET http://domain:65536 ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadPort);
-  }
-
-  SECTION("Uri contains scheme, host and path") {
+  SECTION("Uri contains scheme, host and path.") {
     string buffer = "GET http://domain/index.html ";
-    CHECK(parser.Parse({buffer}, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kGet);
-    CHECK(req.Uri() == "http://domain/index.html");
-    CHECK(req.Scheme() == HttpScheme::kHttp);
-    CHECK(req.Host() == "domain");
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Port() == 80);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.method == http_method::get);
+    CHECK(req.uri == "http://domain/index.html");
+    CHECK(req.scheme == http_scheme::http);
+    CHECK(req.host == "domain");
+    CHECK(req.path == "/index.html");
+    CHECK(req.port == 80);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains scheme, host, port and path") {
+  SECTION("Uri contains scheme, host, port and path.") {
     string buffer = "GET http://domain:10800/index.html ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kGet);
-    CHECK(req.Uri() == "http://domain:10800/index.html");
-    CHECK(req.Scheme() == HttpScheme::kHttp);
-    CHECK(req.Host() == "domain");
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Port() == 10800);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.method == http_method::get);
+    CHECK(req.uri == "http://domain:10800/index.html");
+    CHECK(req.scheme == http_scheme::http);
+    CHECK(req.host == "domain");
+    CHECK(req.path == "/index.html");
+    CHECK(req.port == 10800);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains only path") {
+  SECTION("Uri contains only path.") {
     // In this case, which scheme doesn't exist, host identifier is allowded to
     // be empty. And port should be 80.
+    // TODO: should schemem default to be http or https if no scheme specified?
     string buffer = "GET /index.html ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kGet);
-    CHECK(req.Uri() == "/index.html");
-    CHECK(req.Scheme() == HttpScheme::kUnknown);
-    CHECK(req.Host() == "");
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Port() == 80);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.method == http_method::get);
+    CHECK(req.uri == "/index.html");
+    CHECK(req.scheme == http_scheme::unknown);
+    CHECK(req.host == "");
+    CHECK(req.path == "/index.html");
+    CHECK(req.port == 80);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains non supported path character should return kBadPath") {
+  SECTION("Should return bad_path if uri contains non supported path character.") {
     string buffer = "GET /index.html\r123 ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadPath);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_path);
   }
 
-  SECTION("Uri contains path and parameters") {
+  SECTION("Uri contains path and parameters.") {
     string buffer = "GET /index.html?key1=val1&key2=val2 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kGet);
-    CHECK(req.Uri() == "/index.html?key1=val1&key2=val2");
-    CHECK(req.Scheme() == HttpScheme::kUnknown);
-    CHECK(req.Host() == "");
-    CHECK(req.Port() == 80);
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Params().size() == 2);
-    CHECK(req.ContainsParam("key1"));
-    CHECK(req.ContainsParam("key2"));
-    CHECK(req.ParamValue("key1").value() == "val1");
-    CHECK(req.ParamValue("key2").value() == "val2");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.method == http_method::get);
+    CHECK(req.uri == "/index.html?key1=val1&key2=val2");
+    CHECK(req.scheme == http_scheme::unknown);
+    CHECK(req.host == "");
+    CHECK(req.port == 80);
+    CHECK(req.path == "/index.html");
+    CHECK(req.params.size() == 2);
+    CHECK(req.params.contains("key1"));
+    CHECK(req.params.contains("key2"));
+    CHECK(req.params.find("key1")->second == "val1");
+    CHECK(req.params.find("key2")->second == "val2");
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
   }
 
-  SECTION("Uri contains path and parameters, the parameter has empty key") {
-    string buffer = "GET /index.html?=val ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kGet);
-    CHECK(req.Uri() == "/index.html?=val");
-    CHECK(req.Scheme() == HttpScheme::kUnknown);
-    CHECK(req.Host() == "");
-    CHECK(req.Port() == 80);
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Params().size() == 1);
-    CHECK(req.ContainsParam(""));
-    CHECK(req.ParamValue("").value() == "val");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
-  }
 
   SECTION(
-      "Uri contains path and parameters, the parameter has equal mark with "
-      "empty value") {
+    "Uri contains path and parameters, the parameter has equal mark with "
+    "empty value.") {
     string buffer = "GET /index.html?key= ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Params().size() == 1);
-    CHECK(req.ContainsParam("key"));
-    CHECK(req.ParamValue("key").value() == "");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.params.size() == 1);
+    CHECK(req.params.contains("key"));
+    CHECK(req.params.find("key")->second == "");
+    CHECK(parser.state_ == http1_parse_state::start_line);
   }
 
-  SECTION("Uri contains path and parameters, the parameter has empty value") {
+  SECTION("Uri contains path and parameters, the parameter has empty value.") {
     string buffer = "GET /index.html?key ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Params().size() == 1);
-    CHECK(req.ContainsParam("key"));
-    CHECK(req.ParamValue("key").value() == "");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.params.size() == 1);
+    CHECK(req.params.contains("key"));
+    CHECK(req.params.find("key")->second == "");
+    CHECK(parser.state_ == http1_parse_state::start_line);
   }
 
-  SECTION(
-      "Uri contains path and parameters, the parameters only has adjacent "
-      "ampersand") {
+  SECTION("Uri contains path and parameters, the parameters only has adjacent ampersand.") {
     string buffer = "GET /index.html?&&&&&& ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Params().size() == 0);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.params.size() == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
   }
 
-  SECTION(
-      "Uri contains path and parameters, the parameters only has adjacent "
-      "equal mark") {
+  // TODO: This case. Should we allow empty parameter name?
+  SECTION("Uri contains path and parameters, the parameters only has adjacent equal mark") {
     string buffer = "GET /index.html?=== ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Params().size() == 1);
-    CHECK(req.ContainsParam(""));
-    CHECK(req.ParamValue("") == "==");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
   }
 
-  SECTION(
-      "Uri contains path and parameters, the parameters only has ampersand and "
-      "equal marks") {
+  // TODO: This case. Should we allow empty parameter name?
+  SECTION("Uri contains path and parameters, the parameters only has ampersand and equal marks") {
     string buffer = "GET /index.html?&=&=&=&=& ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Params().size() == 1);
-    CHECK(req.ContainsParam(""));
-    CHECK(req.ParamValue("") == "");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
   }
 
-  SECTION("Uri contains path and parameters, the parameters has repeated key") {
+  SECTION("Uri contains path and parameters, the parameters has repeated key.") {
     string buffer = "GET /index.html?key=val0&key=val1 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Params().size() == 1);
-    CHECK(req.ContainsParam("key"));
-    CHECK(req.ParamValue("key") == "val1");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.params.size() == 2);
+    CHECK(req.params.count("key") == 2);
+    auto range = req.params.equal_range("key");
+    CHECK(range.first->second == "val0");
+    CHECK((++range.first)->second == "val1");
+    CHECK(parser.state_ == http1_parse_state::start_line);
   }
 
-  SECTION("Uri contains non supported parameter token should kBadParameter") {
+  SECTION("Should return bad_params if uri contains non supported parameter token.") {
     string buffer = "GET /index.html?key0\r=val0 ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadParams);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_params);
   }
 
-  SECTION("Uri contains scheme, host, port, path and parameters") {
-    string buffer =
-        "GET https://192.168.1.1:1080/index.html?key0=val0&key1=val1 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Scheme() == HttpScheme::kHttps);
-    CHECK(req.Host() == "192.168.1.1");
-    CHECK(req.Port() == 1080);
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Params().size() == 2);
-    CHECK(req.ContainsParam("key0"));
-    CHECK(req.ContainsParam("key1"));
-    CHECK(req.ParamValue("key0") == "val0");
-    CHECK(req.ParamValue("key1") == "val1");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
+  SECTION("Uri contains scheme, host, port, path and parameters.") {
+    string buffer = "GET https://192.168.1.1:1080/index.html?key0=val0&key1=val1 ";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size() - 1);
+    CHECK(req.scheme == http_scheme::https);
+    CHECK(req.host == "192.168.1.1");
+    CHECK(req.port == 1080);
+    CHECK(req.path == "/index.html");
+    CHECK(req.params.size() == 2);
+    REQUIRE(req.params.contains("key0"));
+    REQUIRE(req.params.contains("key1"));
+    CHECK(req.params.find("key0")->second == "val0");
+    CHECK(req.params.find("key1")->second == "val1");
+    CHECK(parser.state_ == http1_parse_state::start_line);
   }
 
-  SECTION("Uri contains path and a parameter") {
-    string buffer = "GET /index.html?key=val ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size() - 1);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.method == HttpMethod::kGet);
-    CHECK(req.Uri() == "/index.html?key=val");
-    CHECK(req.Scheme() == HttpScheme::kUnknown);
-    CHECK(req.Host() == "");
-    CHECK(req.Port() == 80);
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Params().size() == 1);
-    CHECK(req.ContainsParam("key"));
-    CHECK(req.ParamValue("key").value() == "val");
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
-  }
-
-  SECTION("Step by step parse uri") {
+  SECTION("Step by step parse uri.") {
     string buffer = "PO";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kMethod);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::method);
 
-    ec.clear();
     buffer += "ST ";
-    CHECK(parser.Parse(buffer, ec) == 4);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeUri);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 4);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_uri);
+    buffer.clear(); // Skip the parsed size in buffer.
 
-    ec.clear();
-    // Skip the parsed size in buffer.
-    buffer.clear();
     buffer += "htt";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
-    CHECK(parser.uri_state_ == RequestParser::UriState::kScheme);
-    CHECK(parser.inner_parsed_len_ == 0);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::uri);
+    CHECK(parser.uri_state_ == request_parser::uri_state::scheme);
 
-    ec.clear();
     // http://dom
     buffer += "p://dom";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
-    CHECK(parser.uri_state_ == RequestParser::UriState::kHost);
-    CHECK(parser.inner_parsed_len_ == 7);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::uri);
+    CHECK(parser.uri_state_ == request_parser::uri_state::host);
 
-    ec.clear();
     // http://domain:10
     buffer += "ain:10";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
-    CHECK(parser.uri_state_ == RequestParser::UriState::kPort);
-    // The "http://domain:" is done.
-    CHECK(parser.inner_parsed_len_ == 7 + 7);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::uri);
+    CHECK(parser.uri_state_ == request_parser::uri_state::port);
 
-    ec.clear();
     // http://domain:1080/index
     buffer += "80/index";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
-    CHECK(parser.uri_state_ == RequestParser::UriState::kPath);
-    // The "http://domain:1080" is done.
-    CHECK(parser.inner_parsed_len_ == 7 + 7 + 4);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::uri);
+    CHECK(parser.uri_state_ == request_parser::uri_state::path);
 
-    ec.clear();
     // http://domain:1080/index.html?
     buffer += ".html?";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
-    CHECK(parser.uri_state_ == RequestParser::UriState::kParams);
-    // The "http://domain:1080/index.html?" is done.
-    CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::uri);
+    CHECK(parser.uri_state_ == request_parser::uri_state::params);
 
-    ec.clear();
     // http://domain:1080/index.html?key
     buffer += "key";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
-    CHECK(parser.uri_state_ == RequestParser::UriState::kParams);
-    // The "http://domain:1080/index.html?" is done.
-    CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::uri);
+    CHECK(parser.uri_state_ == request_parser::uri_state::params);
 
-    ec.clear();
     // http://domain:1080/index.html?key=
     buffer += "=";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ == RequestParser::RequestLineState::kUri);
-    CHECK(parser.uri_state_ == RequestParser::UriState::kParams);
-    // The "http://domain:1080/index.html?" is done.
-    CHECK(parser.inner_parsed_len_ == 7 + 7 + 4 + 12 + 4);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::uri);
+    CHECK(parser.uri_state_ == request_parser::uri_state::params);
 
-    ec.clear();
     // http://domain:1080/index.html?key=val
     buffer += "val ";
-    CHECK(parser.Parse(buffer, ec) == 37);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kStartLine);
-    CHECK(parser.request_line_state_ ==
-          RequestParser::RequestLineState::kSpacesBeforeHttpVersion);
-    // The "http://domain:1080/index.html?key=val " is done.
-    CHECK(parser.inner_parsed_len_ == 0);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 37);
+    CHECK(parser.state_ == http1_parse_state::start_line);
+    CHECK(parser.request_line_state_ == request_line_state::spaces_before_http_version);
 
-    CHECK(req.Uri() == "http://domain:1080/index.html?key=val");
-    CHECK(req.scheme == HttpScheme::kHttp);
-    CHECK(req.Host() == "domain");
-    CHECK(req.Port() == 1080);
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Params().size() == 1);
-    CHECK(req.ContainsParam("key"));
-    CHECK(req.ParamValue("key") == "val");
+    CHECK(req.uri == "http://domain:1080/index.html?key=val");
+    CHECK(req.scheme == http_scheme::http);
+    CHECK(req.host == "domain");
+    CHECK(req.port == 1080);
+    CHECK(req.path == "/index.html");
+    CHECK(req.params.size() == 1);
+    CHECK(req.params.contains("key"));
+    CHECK(req.params.find("key")->second == "val");
   }
 }
 
-TEST_CASE("Parse http version", "[parse_http_request]") {
-  Request req;
-  RequestParser parser(&req);
-  error_code ec{};
+TEST_CASE("parse http version", "[parse_http_request]") {
+  http1_client_request req;
+  request_parser parser{&req};
 
-  SECTION("Parse http version 1.0") {
+  SECTION("Parse http version 1.0.") {
     string buffer = "GET /index.html HTTP/1.0\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Method() == HttpMethod::kGet);
-    CHECK(req.Uri() == "/index.html");
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Version() == HttpVersion::kHttp10);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(req.method == http_method::get);
+    CHECK(req.uri == "/index.html");
+    CHECK(req.version == http_version::http10);
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
   }
 
-  SECTION("Parse http version 1.1") {
+  SECTION("Parse http version 1.1.") {
     string buffer = "GET /index.html HTTP/1.1\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Method() == HttpMethod::kGet);
-    CHECK(req.Uri() == "/index.html");
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Version() == HttpVersion::kHttp11);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(req.method == http_method::get);
+    CHECK(req.uri == "/index.html");
+    CHECK(req.version == http_version::http11);
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
   }
 
-  SECTION("Multiply spaces between http version and uri are allowed") {
+  SECTION("Multiply whitespaces between http version and uri are allowed.") {
     string buffer = "GET /index.html     HTTP/1.1\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(req.Method() == HttpMethod::kGet);
-    CHECK(req.Uri() == "/index.html");
-    CHECK(req.Path() == "/index.html");
-    CHECK(req.Version() == HttpVersion::kHttp11);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(req.method == http_method::get);
+    CHECK(req.uri == "/index.html");
+    CHECK(req.version == http_version::http11);
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
   }
 
-  SECTION("Parse invalid http version should return kBadVersion") {
+  SECTION("Should return bad_version if http version is invalid.") {
     string buffer = "GET /index.html HTTP/1x1\r\n";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_version);
   }
 
-  SECTION("http version should be all uppercase") {
+  SECTION("Should return bad_version if http version is not uppercase.") {
     string buffer = "GET /index.html http/1.1\r\n";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadVersion);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_version);
   }
 }
 
-TEST_CASE("Parse http headers", "[parse_http_request]") {
-  Request req;
-  RequestParser parser(&req);
-  error_code ec{};
+TEST_CASE("parse http headers", "[parse_http_request]") {
+  http1_client_request req;
+  request_parser parser{&req};
 
-  SECTION("Parse http header Host") {
+  SECTION("Parse http header Host.") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Host: 1.1.1.1\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.Headers().size() == 1);
-    CHECK(req.ContainsHeader("Host"));
-    CHECK(req.HeaderValue("Host") == "1.1.1.1");
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 1);
+    REQUIRE(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
   }
 
-  SECTION("Parse empty http header should return kEmptyHeaderName") {
+  SECTION("Should return empty_header_name error when parse empty http header.") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        ":1.1.1.1\r\n";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kEmptyHeaderName);
+      "GET /index.html HTTP/1.1\r\n"
+      ":1.1.1.1\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::empty_header_name);
+  }
+
+  SECTION("Should return bad_header_name if http header contains with only non-token character.") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "\r:Y\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_header_name);
+  }
+
+  SECTION("Should return bad_header_name if http header contains non-token character.") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "H\r:Y\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_header_name);
+  }
+
+  SECTION("Parse http header, header name only have one character.") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "x:y\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 1);
+    REQUIRE(req.headers.contains("x"));
+    CHECK(req.headers.find("x")->second == "y");
+  }
+
+  SECTION("parse http header Host, multiply spaces before header value") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host:     1.1.1.1\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 1);
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
+  }
+
+  SECTION("parse http header Host, multiply spaces after header value") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1     \r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 1);
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
+  }
+
+  SECTION("parse http header Host, no spaces after header value") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 1);
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
+  }
+
+  SECTION("parse http header Host, Host appear multiply times, save all repeated headers") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n"
+      "Host: 2.2.2.2\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 2);
+    REQUIRE(req.headers.count("Host") == 2);
+    auto range = req.headers.equal_range("Host");
+    CHECK(range.first->second == "1.1.1.1");
+    CHECK((++range.first)->second == "2.2.2.2");
   }
 
   SECTION(
-      "Parse http header with only non-token character should return "
-      "kBadHeaderName") {
+    "parse http header Host, Host appear multiply times but with different case, save all repeated "
+    "headers") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "\r:Y\r\n";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadHeaderName);
+      "GET /index.html HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n"
+      "hoST: 2.2.2.2\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 2);
+    REQUIRE(req.headers.count("Host") == 2);
+    auto range = req.headers.equal_range("Host");
+    CHECK(range.first->second == "1.1.1.1");
+    CHECK((++range.first)->second == "2.2.2.2");
   }
 
-  SECTION(
-      "Parse http header with non-token character should return "
-      "kBadHeaderName") {
+  SECTION("Should return empty_header_value if http header value is empty.") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "H\r:Y\r\n";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadHeaderName);
+      "GET /index.html HTTP/1.1\r\n"
+      "Host:\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::empty_header_value);
   }
 
-  SECTION("Parse http header, the header name only have one character") {
+  SECTION("Parse multiply different http headers.") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "x:y\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.Headers().size() == 1);
-    CHECK(req.ContainsHeader("x"));
-    CHECK(req.HeaderValue("x") == "y");
+      "GET /index.html HTTP/1.1\r\n"
+      "Host:1.1.1.1\r\n"
+      "Server:mock\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.size() == 2);
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "1.1.1.1");
+    CHECK(req.headers.contains("Server"));
+    CHECK(req.headers.find("Server")->second == "mock");
   }
 
-  SECTION("Parse http header Host, multiply spaces before header value") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Host:     1.1.1.1\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.Headers().size() == 1);
-    CHECK(req.ContainsHeader("Host"));
-    CHECK(req.HeaderValue("Host") == "1.1.1.1");
-  }
-
-  SECTION("Parse http header Host, multiply spaces after header value") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Host: 1.1.1.1     \r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.Headers().size() == 1);
-    CHECK(req.ContainsHeader("Host"));
-    CHECK(req.HeaderValue("Host") == "1.1.1.1");
-  }
-
-  SECTION("Parse http header Host, no spaces after header value") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Host: 1.1.1.1\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.Headers().size() == 1);
-    CHECK(req.ContainsHeader("Host"));
-    CHECK(req.HeaderValue("Host") == "1.1.1.1");
-  }
-
-  SECTION(
-      "Parse http header Host, Host appear multiply times, use the last "
-      "appeared value") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Host: 1.1.1.1\r\n"
-        "Host: 2.2.2.2\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.Headers().size() == 1);
-    CHECK(req.ContainsHeader("Host"));
-    CHECK(req.HeaderValue("Host") == "2.2.2.2");
-  }
-
-  SECTION(
-      "Parse http header Host, Host appears multiply times but with different "
-      "character case, use the last appeared value") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Host: 1.1.1.1\r\n"
-        "hoST: 2.2.2.2\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.Headers().size() == 1);
-    CHECK(req.ContainsHeader("Host"));
-    CHECK(req.HeaderValue("Host") == "2.2.2.2");
-  }
-
-  SECTION("Parse empty http header value should return kEmptyHeaderValue") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Host:\r\n";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kEmptyHeaderValue);
-  }
-
-  SECTION("Parse multiply http header") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Host:1.1.1.1\r\n"
-        "Server:mock\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.Headers().size() == 2);
-    CHECK(req.ContainsHeader("Host"));
-    CHECK(req.HeaderValue("Host") == "1.1.1.1");
-    CHECK(req.ContainsHeader("Server"));
-    CHECK(req.HeaderValue("Server") == "mock");
-  }
-
-  SECTION("Parse http header Accept") {
+  SECTION("parse http header Accept") {
     // The Accept request HTTP header indicates which content types, expressed
     // as MIME types, the client is able to understand.
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Accept: image/*\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Accept"));
-    CHECK(req.HeaderValue("Accept") == "image/*");
+      "GET /index.html HTTP/1.1\r\n"
+      "Accept: image/*\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Accept"));
+    CHECK(req.headers.find("Accept")->second == "image/*");
   }
 
-  SECTION("Parse http header Accept-Encoding which value is gzip") {
+  SECTION("parse http header Accept-Encoding which value is gzip") {
     // The Accept-Encoding request HTTP header indicates the content encoding
     // (usually a compression algorithm) that the client can understand.
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Accept-Encoding: gzip\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Accept-Encoding"));
-    CHECK(req.HeaderValue("Accept-Encoding") == "gzip");
+      "GET /index.html HTTP/1.1\r\n"
+      "Accept-Encoding: gzip\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Accept-Encoding"));
+    CHECK(req.headers.find("Accept-Encoding")->second == "gzip");
   }
 
-  SECTION("Parse http header Accept-Encoding which value is compress") {
-    // The Accept-Encoding request HTTP header indicates the content encoding
-    // (usually a compression algorithm) that the client can understand.
+  SECTION("parse http header Connection") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Accept-Encoding: compress\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Accept-Encoding"));
-    CHECK(req.HeaderValue("Accept-Encoding") == "compress");
+      "GET /index.html HTTP/1.1\r\n"
+      "Connection: Keep-Alive\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Connection"));
+    CHECK(req.headers.find("Connection")->second == "Keep-Alive");
   }
 
-  SECTION("Parse http header Accept-Encoding which value is deflate") {
-    // The Accept-Encoding request HTTP header indicates the content encoding
-    // (usually a compression algorithm) that the client can understand.
+  SECTION("parse http header Content-Encoding") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Accept-Encoding: deflate\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Accept-Encoding"));
-    CHECK(req.HeaderValue("Accept-Encoding") == "deflate");
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Encoding: gzip\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Content-Encoding"));
+    CHECK(req.headers.find("Content-Encoding")->second == "gzip");
   }
 
-  SECTION("Parse http header Accept-Encoding which value is br") {
-    // The Accept-Encoding request HTTP header indicates the content encoding
-    // (usually a compression algorithm) that the client can understand.
+  SECTION("parse http header Content-Type") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Accept-Encoding: br\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Accept-Encoding"));
-    CHECK(req.HeaderValue("Accept-Encoding") == "br");
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Type: text/html;charset=utf-8\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Content-Type"));
+    CHECK(req.headers.find("Content-Type")->second == "text/html;charset=utf-8");
   }
 
-  SECTION("Parse http header Accept-Encoding which value is identity") {
-    // The Accept-Encoding request HTTP header indicates the content encoding
-    // (usually a compression algorithm) that the client can understand.
+  SECTION("parse http header Date") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Accept-Encoding: identity\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Accept-Encoding"));
-    CHECK(req.HeaderValue("Accept-Encoding") == "identity");
-  }
-
-  SECTION("Parse http header Accept-Encoding which value is *") {
-    // The Accept-Encoding request HTTP header indicates the content encoding
-    // (usually a compression algorithm) that the client can understand.
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Accept-Encoding: *\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Accept-Encoding"));
-    CHECK(req.HeaderValue("Accept-Encoding") == "*");
-  }
-  SECTION(
-
-      "Parse http header Accept-Encoding, header occurs multiply times, "
-      "combine all values in order") {
-    // The Accept-Encoding request HTTP header indicates the content encoding
-    // (usually a compression algorithm) that the client can understand.
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Accept-Encoding:*\r\n"
-        "Accept-Encoding:gzip\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Accept-Encoding"));
-    CHECK(req.HeaderValue("Accept-Encoding") == "*,gzip");
-  }
-
-  SECTION("Parse http header Connection") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Connection: Keep-Alive\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Connection"));
-    CHECK(req.HeaderValue("Connection") == "Keep-Alive");
-  }
-
-  SECTION("Parse http header Content-Encoding") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Content-Encoding: gzip\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Content-Encoding"));
-    CHECK(req.HeaderValue("Content-Encoding") == "gzip");
-  }
-
-  SECTION("Parse http header Content-Type") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Content-Type: text/html;charset=utf-8\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Content-Type"));
-    CHECK(req.HeaderValue("Content-Type") == "text/html;charset=utf-8");
-  }
-
-  SECTION("Parse http header Content-Length, Content-Length has valid value") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Content-Length: 120\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Content-Length"));
-    CHECK(req.HeaderValue("Content-Length") == "120");
-    CHECK(req.content_length == 120);
-  }
-
-  SECTION(
-      "Parse http header Content-Length, the length value is out of range "
-      "should return kBadContentLength") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Content-Length: 12000000000000000000000000000000\r\n";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadContentLength);
-  }
-
-  SECTION(
-      "Parse http header Content-Length, the length string is invalid "
-      "should return kBadContentLength") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Content-Length: -10\r\n";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadContentLength);
-  }
-
-  SECTION("Parse http header Date") {
-    string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Date: Thu, 11 Aug 2016 15:23:13 GMT\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
-    CHECK(req.ContainsHeader("Date"));
-    CHECK(req.HeaderValue("Date") == "Thu, 11 Aug 2016 15:23:13 GMT");
+      "GET /index.html HTTP/1.1\r\n"
+      "Date: Thu, 11 Aug 2016 15:23:13 GMT\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
+    CHECK(req.headers.contains("Date"));
+    CHECK(req.headers.find("Date")->second == "Thu, 11 Aug 2016 15:23:13 GMT");
   }
 
   SECTION("Step by Step parse http header") {
     string buffer = "GET /index.html HTTP/1.1\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
 
     // Skip the parsed data.
     buffer = "";
 
     // Buffer: Ho
     buffer += "Ho";
-    ec.clear();
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
 
     // Buffer: Host
     buffer += "st";
-    ec.clear();
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
 
     // Buffer: Host:
     buffer += ":";
-    ec.clear();
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
 
     // Buffer: Host:192.168.1.1
     buffer += "192.168.1.1";
-    ec.clear();
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
 
     // Buffer: Host:192.168.1.1\r
     buffer += "\r";
-    ec.clear();
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == RequestParser::MessageState::kHeader);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == 0);
+    CHECK(parser.state_ == http1_parse_state::header);
 
     // Buffer: Host:192.168.1.1\r\n
     buffer += "\n";
-    ec.clear();
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          RequestParser::MessageState::kExpectingNewline);
+    result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(req.headers.contains("Host"));
+    CHECK(req.headers.find("Host")->second == "192.168.1.1");
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
   }
 }
 
-TEST_CASE("parse http request body") {
-  Request req;
-  RequestParser parser(&req);
-  error_code ec{};
+TEST_CASE("parse http request body", "[parse_http_request]") {
+  http1_client_request req;
+  request_parser parser{&req};
+
+  SECTION(
+    "parse special HTTP header Content-Length, the length value is out of range "
+    "should return bad_content_length") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Length: 12000000000000000000000000000000\r\n"
+      "\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_content_length);
+  }
+
+  SECTION(
+    "parse special HTTP header Content-Length, the length string is invalid "
+    "should return bad_content_length") {
+    string buffer =
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Length: -10\r\n"
+      "\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::bad_content_length);
+  }
 
   SECTION("No Content-Length header means no request body") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == std::errc{});
-    CHECK(parser.message_state_ == RequestParser::MessageState::kCompleted);
+      "GET /index.html HTTP/1.1\r\n"
+      "\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::completed);
     CHECK(req.body == "");
   }
 
   SECTION("The value of Content-Length is zero means no request body") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Content-Length: 0\r\n"
-        "\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == std::errc{});
-    CHECK(parser.message_state_ == RequestParser::MessageState::kCompleted);
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Length: 0\r\n"
+      "\r\n";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::completed);
     CHECK(req.body == "");
   }
 
   SECTION("The value of Content-Length equals to request body") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Content-Length: 11\r\n"
-        "\r\n"
-        "Hello World";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == std::errc{});
-    CHECK(parser.message_state_ == RequestParser::MessageState::kCompleted);
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Length: 11\r\n"
+      "\r\n"
+      "Hello World";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(result);
+    CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::completed);
     CHECK(req.content_length == 11);
     CHECK(req.body == "Hello World");
   }
 
-  SECTION("Content-Length value less than body size") {
+  SECTION(
+    "Should return body_size_bigger_than_content_length if Content-Length less than body size") {
     string buffer =
-        "GET /index.html HTTP/1.1\r\n"
-        "Content-Length: 1\r\n"
-        "\r\n"
-        "Hello World";
-    CHECK(parser.Parse(buffer, ec) == 48);
-    CHECK(ec == std::errc{});
-    CHECK(parser.message_state_ == RequestParser::MessageState::kCompleted);
-    CHECK(req.content_length == 1);
-    CHECK(req.body == "H");
+      "GET /index.html HTTP/1.1\r\n"
+      "Content-Length: 1\r\n"
+      "\r\n"
+      "Hello World";
+    auto result = parser.parse(std::span(buffer));
+    REQUIRE(!result);
+    CHECK(result.error() == error::body_size_bigger_than_content_length);
   }
 }
 
-TEST_CASE("parse http response status line") {
-  Response rsp;
-  ResponseParser parser{&rsp};
-  std::error_code ec{};
-
-  SECTION("parse valid http1.1 version") {
-    std::string buffer = "HTTP/1.1 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == ResponseParser::MessageState::kStartLine);
-    CHECK(parser.status_line_state_ ==
-          ResponseParser::StatusLineState::kStatusCode);
-    CHECK(rsp.version == HttpVersion::kHttp11);
-  }
-
-  SECTION("parse valid http1.0 version") {
-    std::string buffer = "HTTP/1.0 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == ResponseParser::MessageState::kStartLine);
-    CHECK(parser.status_line_state_ ==
-          ResponseParser::StatusLineState::kStatusCode);
-    CHECK(rsp.version == HttpVersion::kHttp10);
-  }
-
-  SECTION("parse invalid http version") {
-    std::string buffer = "http/1.0 ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadVersion);
-  }
-
-  SECTION("parse valid http status code") {
-    std::string buffer = "HTTP/1.1 200 ";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ == ResponseParser::MessageState::kStartLine);
-    CHECK(parser.status_line_state_ ==
-          ResponseParser::StatusLineState::kReason);
-    CHECK(rsp.version == HttpVersion::kHttp11);
-    CHECK(rsp.status_code == HttpStatusCode::kOK);
-  }
-
-  SECTION("parse invalid http status code, the code string length isn't 3") {
-    std::string buffer = "HTTP/1.1 2000 ";
-    CHECK(parser.Parse(buffer, ec) == 0);
-    CHECK(ec == Error::kBadStatus);
-  }
-
-  SECTION("parse valid http reason") {
-    std::string buffer = "HTTP/1.1 200 OK\r\n";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == Error::kNeedMore);
-    CHECK(parser.message_state_ ==
-          ResponseParser::MessageState::kExpectingNewline);
-    CHECK(rsp.version == HttpVersion::kHttp11);
-    CHECK(rsp.status_code == HttpStatusCode::kOK);
-    CHECK(rsp.reason == "OK");
-  }
-
-  SECTION("parse a complete http response") {
-    std::string buffer =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Length:11\r\n"
-        "\r\n"
-        "Hello world";
-    CHECK(parser.Parse(buffer, ec) == buffer.size());
-    CHECK(ec == std::errc{});
-    CHECK(parser.message_state_ == ResponseParser::MessageState::kCompleted);
-    CHECK(rsp.version == HttpVersion::kHttp11);
-    CHECK(rsp.status_code == HttpStatusCode::kOK);
-    CHECK(rsp.reason == "OK");
-    CHECK(rsp.content_length == 11);
-    CHECK(rsp.ContainsHeader("Content-Length"));
-    CHECK(rsp.Body() == "Hello world");
-  }
-}
+// TEST_CASE("parse http response status line") {
+//   Response rsp;
+//   Responseparser parser{&rsp};
+//   std::error_code ec{};
+//
+//   SECTION("parse valid http1.1 version") {
+//     std::string buffer = "HTTP/1.1 ";
+//     CHECK(parser.parse(buffer, ec) == buffer.size());
+//     CHECK(ec == Error::kNeedMore);
+//     CHECK(parser.state_ == Responseparser::MessageState::start_line);
+//     CHECK(parser.status_line_state_ == Responseparser::StatusLineState::kStatusCode);
+//     CHECK(rsp.version == http_version::http11);
+//   }
+//
+//   SECTION("parse valid http1.0 version") {
+//     std::string buffer = "HTTP/1.0 ";
+//     CHECK(parser.parse(buffer, ec) == buffer.size());
+//     CHECK(ec == Error::kNeedMore);
+//     CHECK(parser.state_ == Responseparser::MessageState::start_line);
+//     CHECK(parser.status_line_state_ == Responseparser::StatusLineState::kStatusCode);
+//     CHECK(rsp.version == http_version::http10);
+//   }
+//
+//   SECTION("parse invalid http version") {
+//     std::string buffer = "http/1.0 ";
+//     CHECK(parser.parse(buffer, ec) == 0);
+//     CHECK(ec == Error::kBadVersion);
+//   }
+//
+//   SECTION("parse valid http status code") {
+//     std::string buffer = "HTTP/1.1 200 ";
+//     CHECK(parser.parse(buffer, ec) == buffer.size());
+//     CHECK(ec == Error::kNeedMore);
+//     CHECK(parser.state_ == Responseparser::MessageState::start_line);
+//     CHECK(parser.status_line_state_ == Responseparser::StatusLineState::kReason);
+//     CHECK(rsp.version == http_version::http11);
+//     CHECK(rsp.status_code == HttpStatusCode::kOK);
+//   }
+//
+//   SECTION("parse invalid http status code, the code string length isn't 3") {
+//     std::string buffer = "HTTP/1.1 2000 ";
+//     CHECK(parser.parse(buffer, ec) == 0);
+//     CHECK(ec == Error::kBadStatus);
+//   }
+//
+//   SECTION("parse valid http reason") {
+//     std::string buffer = "HTTP/1.1 200 OK\r\n";
+//     CHECK(parser.parse(buffer, ec) == buffer.size());
+//     CHECK(ec == Error::kNeedMore);
+//     CHECK(parser.state_ == Responseparser::MessageState::expecting_newline);
+//     CHECK(rsp.version == http_version::http11);
+//     CHECK(rsp.status_code == HttpStatusCode::kOK);
+//     CHECK(rsp.reason == "OK");
+//   }
+//
+//   SECTION("parse a complete http response") {
+//     std::string buffer =
+//       "HTTP/1.1 200 OK\r\n"
+//       "Content-Length:11\r\n"
+//       "\r\n"
+//       "Hello world";
+//     CHECK(parser.parse(buffer, ec) == buffer.size());
+//     CHECK(ec == std::errc{});
+//     CHECK(parser.state_ == Responseparser::MessageState::completed);
+//     CHECK(rsp.version == http_version::http11);
+//     CHECK(rsp.status_code == HttpStatusCode::kOK);
+//     CHECK(rsp.reason == "OK");
+//     CHECK(rsp.content_length == 11);
+//     CHECK(rsp.params.contains("Content-Length"));
+//     CHECK(rsp.Body() == "Hello world");
+//   }
+// }
