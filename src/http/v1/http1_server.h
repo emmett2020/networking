@@ -42,8 +42,6 @@
 #include "http/v1/http1_op_send.h"
 #include "http/v1/http1_op_handle.h"
 
-
-
 // TODO: APIs should be constraint by sender_of concept
 // TODO: refine headers
 
@@ -51,6 +49,7 @@ namespace net::http::http1 {
 
   using namespace std::chrono_literals;
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
+
   // A http session is a conversation between client and server.
   // We use session id to identify a specific unique conversation.
   struct http_session {
@@ -93,12 +92,10 @@ namespace net::http::http1 {
     void update_metric(auto&&...) {
     }
 
-    sio::ip::endpoint endpoint{};
+    sio::ip::endpoint endpoint;
     context_t& context; // NOLINT
     acceptor_t acceptor;
   };
-
-
 
   struct handle_error_t {
     template <typename E>
@@ -127,11 +124,11 @@ namespace net::http::http1 {
                  return ex::just(http_session{.socket = socket})   //
                       | ex::let_value([&](http_session& session) { //
                           return recv_request(session.socket)      //
-                               | ex::let_value([&](http1_client_request& request) {
-                                                s.update_metric(request.metric);
-            return ex::just(std::move(request));
-          })
-                               | ex::let_value(handle_request)     //
+                               | ex::then([&](http1_client_request&& request) {
+                                   s.update_metric(request.metric);
+                                   return std::move(request);
+                                 })
+                               | ex::let_value(handle_request) //
                                | ex::let_value([&](http1_client_response& resp) {
                                    return send_response(session.socket, resp)
                                         | ex::then([&] { s.update_metric(resp.metrics); })
