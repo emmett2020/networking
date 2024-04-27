@@ -33,7 +33,7 @@
 
 namespace net::http::http1 {
   using namespace std::chrono_literals;
-  using parser_t = message_parser<http1_client_request>;
+  using parser_t = message_parser<http_request>;
   using flat_buffer = util::flat_buffer<65535>; // TODO: dynamic_flat_buffer?
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
 
@@ -75,7 +75,7 @@ namespace net::http::http1 {
   // Receive a completed request from given socket.
   inline ex::sender auto
     recv_request(const tcp_socket& socket, const http_option& option) noexcept {
-    using state_t = std::tuple< http1_client_request, parser_t, flat_buffer, http_duration>;
+    using state_t = std::tuple< http_request, parser_t, flat_buffer, http_duration>;
     return ex::just(state_t{}) //
          | ex::let_value([&](state_t& state) {
              auto& [request, parser, buffer, timeout] = state;

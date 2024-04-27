@@ -31,8 +31,8 @@ namespace net::http::http1 {
   inline ex::sender auto send_response(
     const tcp_socket& socket,
     const http_option& option,
-    http1_client_response&& response) noexcept {
-    return ex::let_value(ex::just(std::move(response)), [&](http1_client_response& resp) {
+    http_response&& response) noexcept {
+    return ex::let_value(ex::just(std::move(response)), [&](http_response& resp) {
       return ex::just_from_expected([&] { return resp.to_string(); })
            | ex::let_value([&](std::string& data) {
                data += resp.body;

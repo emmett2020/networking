@@ -36,7 +36,6 @@ namespace net::http {
 
   template <typename T>
   concept http1_request_concept = requires(T& t) {
-    { T::direction() } -> std::convertible_to<http_message_direction>;
     { std::convertible_to<decltype(t.uri), std::string> };
     { std::convertible_to<decltype(t.host), std::string> };
     { std::convertible_to<decltype(t.path), std::string> };

@@ -21,7 +21,7 @@
 #include "http/v1/http1_response.h"
 
 namespace net::http::http1 {
-  inline bool need_keepalive(const http1_client_request& request) noexcept {
+  inline bool need_keepalive(const http_request& request) noexcept {
     if (request.headers.contains(http_header_connection)) {
       return true;
     }
@@ -31,9 +31,11 @@ namespace net::http::http1 {
     return false;
   }
 
+  using http_handler = std::function<void(const http_request&, http_response&)>;
+
   // Handle http request then request response.
-  inline ex::sender auto handle_request(const http1_client_request& request) noexcept {
-    http1_client_response response{};
+  inline ex::sender auto handle_request(const http_request& request) noexcept {
+    http_response response{};
     response.status_code = http_status_code::ok;
     response.version = request.version;
     response.headers = request.headers;

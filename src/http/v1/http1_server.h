@@ -119,13 +119,13 @@ namespace net::http::http1 {
   inline constexpr handle_error_t handle_error{};
 
   inline ex::sender auto deal_one(server& serv, http_session& session) {
-    auto update_recv_metric = [&](http1_client_request&& req) {
+    auto update_recv_metric = [&](http_request&& req) {
       serv.metric.total_recv_size += req.metric.size.total;
       session.recv_metric.size.total += req.metric.size.total;
       return std::move(req);
     };
 
-    auto update_send_metric = [&](http1_client_response&& rsp) {
+    auto update_send_metric = [&](http_response&& rsp) {
       serv.metric.total_recv_size += rsp.metric.size.total;
       session.recv_metric.size.total += rsp.metric.size.total;
       return std::move(rsp);
@@ -134,11 +134,11 @@ namespace net::http::http1 {
     return recv_request(session.socket, session.option) //
          | ex::then(update_recv_metric)                 //
          | ex::let_value(handle_request)                //
-         | ex::let_value([&](http1_client_response& resp) {
+         | ex::let_value([&](http_response& resp) {
              return send_response(session.socket, session.option, std::move(resp));
            })                           //
          | ex::then(update_send_metric) //
-         | ex::then([&](http1_client_response&& rsp) {
+         | ex::then([&](http_response&& rsp) {
              session.option.need_keepalive = rsp.need_keepalive;
              return !rsp.need_keepalive;
            })

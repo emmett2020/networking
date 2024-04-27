@@ -21,25 +21,17 @@
 
 #include "expected.h"
 #include "http/http_common.h"
-#include "http/http_concept.h"
 #include "http/http_error.h"
 #include "http/http_metric.h"
 #include "utils/string_compare.h"
 
 namespace net::http::http1 {
-  template <
-    http_message_direction Direction,
-    http_text_encoding Encoding = http_text_encoding::utf_8 >
   struct response {
     using headers_t = std::multimap<std::string, std::string, util::case_insensitive_compare>;
     using metric_t = http_metric;
 
-    static constexpr http_message_direction direction() noexcept {
-      return Direction;
-    }
-
     static constexpr http_text_encoding text_encoding() noexcept {
-      return Encoding;
+      return http_text_encoding::utf_8;
     }
 
     [[nodiscard]] string_expected to_string() const noexcept {
@@ -86,6 +78,5 @@ namespace net::http::http1 {
 } // namespace net::http::http1
 
 namespace net::http {
-  using http1_client_response = http1::response<http_message_direction::send_to_client>;
-  using http1_server_response = http1::response<http_message_direction::receiver_from_server>;
+  using http_response = http1::response;
 }

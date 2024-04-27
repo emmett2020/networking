@@ -20,26 +20,18 @@
 #include <string>
 
 #include "http/http_common.h"
-#include "http/http_concept.h"
 #include "http/http_metric.h"
 #include "utils/string_compare.h"
 
 namespace net::http::http1 {
   // A request could be used while client send to server or server send to client.
-  template <
-    http_message_direction Direction,
-    http_text_encoding Encoding = http_text_encoding::utf_8 >
   struct request {
     using params_t = std::multimap<std::string, std::string>;
     using headers_t = std::multimap<std::string, std::string, util::case_insensitive_compare>;
     using metric_t = http_metric;
 
-    static constexpr http_message_direction direction() noexcept {
-      return Direction;
-    }
-
     static constexpr http_text_encoding text_encoding() noexcept {
-      return Encoding;
+      return http_text_encoding::utf_8;
     }
 
     http_method method = http_method::unknown;
@@ -59,6 +51,5 @@ namespace net::http::http1 {
 } // namespace net::http::http1
 
 namespace net::http {
-  using http1_client_request = http1::request<http_message_direction::receive_from_client>;
-  using http1_server_request = http1::request<http_message_direction::send_to_server>;
+  using http_request = net::http::http1::request;
 }
