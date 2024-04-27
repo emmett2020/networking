@@ -140,7 +140,7 @@ namespace net::http::http1 {
          | ex::then(update_send_metric) //
          | ex::then([&](http1_client_response&& rsp) {
              session.option.need_keepalive = rsp.need_keepalive;
-             return rsp.need_keepalive;
+             return !rsp.need_keepalive;
            })
          | ex::repeat_effect_until() //
          | ex::upon_error(handle_error);

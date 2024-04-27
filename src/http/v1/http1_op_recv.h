@@ -60,7 +60,7 @@ namespace net::http::http1 {
     return ex::if_then_else(
       sz != 0, //
       ex::just(sz),
-      ex::just_error(error::end_of_stream));
+      ex::just_error(std::error_code(error::end_of_stream)));
   };
 
   // Parse HTTP request uses received flat buffer.
