@@ -22,19 +22,17 @@
 #include "http/http_common.h"
 #include "http/http_concept.h"
 #include "http/http_metric.h"
-#include "http/http_option.h"
 #include "utils/string_compare.h"
 
 namespace net::http::http1 {
   // A request could be used while client send to server or server send to client.
   template <
     http_message_direction Direction,
-    http_text_encoding Encoding = http_text_encoding::utf_8,
-    http1_metric_concept Metric = http_metric >
+    http_text_encoding Encoding = http_text_encoding::utf_8 >
   struct request {
     using params_t = std::multimap<std::string, std::string>;
     using headers_t = std::multimap<std::string, std::string, util::case_insensitive_compare>;
-    using metric_t = Metric;
+    using metric_t = http_metric;
 
     static constexpr http_message_direction direction() noexcept {
       return Direction;
@@ -42,23 +40,6 @@ namespace net::http::http1 {
 
     static constexpr http_text_encoding text_encoding() noexcept {
       return Encoding;
-    }
-
-    static constexpr auto socket_option() noexcept {
-      if constexpr (direction() == http_message_direction::receive_from_client) {
-        return http_recv_option{};
-      } else {
-        return http_send_option{};
-      }
-    }
-
-    // TODO: Do we really need this?
-    void update_metric(
-      const metric_t::timepoint_t& start,
-      const metric_t::timepoint_t& stop,
-      std::size_t size) noexcept {
-      metric.update_time(start, stop);
-      metric.update_size(size);
     }
 
     http_method method = http_method::unknown;
@@ -72,7 +53,7 @@ namespace net::http::http1 {
     std::size_t content_length = 0;
     headers_t headers;
     params_t params;
-    metric_t metric;
+    http_metric metric;
   };
 
 } // namespace net::http::http1

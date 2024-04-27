@@ -20,7 +20,6 @@
 #include "http/v1/http1_request.h"
 #include "http/v1/http1_response.h"
 
-
 namespace net::http::http1 {
   inline bool need_keepalive(const http1_client_request& request) noexcept {
     if (request.headers.contains(http_header_connection)) {
@@ -43,4 +42,4 @@ namespace net::http::http1 {
     return ex::just(std::move(response));
   }
 
-}  // namespace net::http::http1
+} // namespace net::http::http1

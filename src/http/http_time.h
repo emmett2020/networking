@@ -16,15 +16,12 @@
 
 #pragma once
 
-#include "http/http_time.h"
+#include <chrono>
 
 namespace net::http {
+  using namespace std::chrono_literals;
+  using http_duration = std::chrono::microseconds;
+  using http_timepoint = std::chrono::time_point<std::chrono::system_clock>;
 
-  struct http_option {
-    http_duration total_recv_timeout{600s};
-    http_duration keepalive_timeout{120s};
-    http_duration total_send_timeout{600s};
-    bool need_keepalive = false;
-  };
-
-} // namespace net::http
+  static constexpr auto unlimited_timeout = http_duration::max();
+}

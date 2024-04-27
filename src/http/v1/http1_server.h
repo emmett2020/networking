@@ -30,6 +30,8 @@
 #include <sio/ip/tcp.hpp>
 #include <sio/io_concepts.hpp>
 
+#include "http/http_metric.h"
+#include "http/http_option.h"
 #include "utils/execution.h"
 #include "http/v1/http1_request.h"
 #include "utils/flat_buffer.h"
@@ -62,10 +64,12 @@ namespace net::http::http1 {
       return session_idx.load();
     }
 
-    id_type id{make_session_id()};
     tcp_socket socket;
+    id_type id{make_session_id()};
     std::size_t reuse_cnt = 0;
-    bool need_keepalive = false;
+    http_option option;
+    http_metric recv_metric;
+    http_metric send_metric;
   };
 
   // A http server.
@@ -89,12 +93,10 @@ namespace net::http::http1 {
       , acceptor{&context, sio::ip::tcp::v4(), endpoint} {
     }
 
-    void update_metric(auto&&...) {
-    }
-
     sio::ip::endpoint endpoint;
     context_t& context; // NOLINT
     acceptor_t acceptor;
+    server_metric metric;
   };
 
   struct handle_error_t {
@@ -116,27 +118,41 @@ namespace net::http::http1 {
 
   inline constexpr handle_error_t handle_error{};
 
+  inline ex::sender auto deal_one(server& serv, http_session& session) {
+    auto update_recv_metric = [&](http1_client_request&& req) {
+      serv.metric.total_recv_size += req.metric.size.total;
+      session.recv_metric.size.total += req.metric.size.total;
+      return std::move(req);
+    };
+
+    auto update_send_metric = [&](http1_client_response&& rsp) {
+      serv.metric.total_recv_size += rsp.metric.size.total;
+      session.recv_metric.size.total += rsp.metric.size.total;
+      return std::move(rsp);
+    };
+
+    return recv_request(session.socket, session.option) //
+         | ex::then(update_recv_metric)                 //
+         | ex::let_value(handle_request)                //
+         | ex::let_value([&](http1_client_response& resp) {
+             return send_response(session.socket, session.option, std::move(resp));
+           })                           //
+         | ex::then(update_send_metric) //
+         | ex::then([&](http1_client_response&& rsp) {
+             session.option.need_keepalive = rsp.need_keepalive;
+             return rsp.need_keepalive;
+           })
+         | ex::repeat_effect_until() //
+         | ex::upon_error(handle_error);
+  }
+
   inline void start_server(server& s) noexcept {
     auto handles = sio::async::use_resources(
       [&](server::acceptor_handle_t acceptor) noexcept {
         return sio::async::accept(acceptor) //
              | sio::let_value_each([&](server::socket_t socket) {
-                 return ex::just(http_session{.socket = socket})   //
-                      | ex::let_value([&](http_session& session) { //
-                          return recv_request(session.socket)      //
-                               | ex::then([&](http1_client_request&& request) {
-                                   s.update_metric(request.metric);
-                                   return std::move(request);
-                                 })
-                               | ex::let_value(handle_request) //
-                               | ex::let_value([&](http1_client_response& resp) {
-                                   return send_response(session.socket, resp)
-                                        | ex::then([&] { s.update_metric(resp.metrics); })
-                                        | ex::then([&] { return resp.need_keepalive; });
-                                 })
-                               | ex::repeat_effect_until() //
-                               | ex::upon_error(handle_error);
-                        });
+                 return ex::just(http_session{.socket = socket}) //
+                      | ex::let_value([&](auto& session) { return deal_one(s, session); });
                })
              | sio::ignore_all();
       },
