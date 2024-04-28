@@ -17,19 +17,22 @@
 #pragma once
 
 #include <chrono>
-#include <tuple>
 #include <utility>
 
 #include "http/http_option.h"
+#include "http/http_time.h"
 #include "utils/execution.h"
 
-#include "http/v1/http1_message_parser.h"
-#include "http/v1/http1_request.h"
+#include "http/http_request.h"
 #include "http/http_error.h"
+#include "http/v1/http1_message_parser.h"
+#include "http/v1/http_connection.h"
 #include "utils/flat_buffer.h"
 #include "utils/timeout.h"
 #include "utils/if_then_else.h"
 #include "utils/just_from_expected.h"
+
+// TODO: so many inline functions?
 
 namespace net::http::http1 {
   using namespace std::chrono_literals;
@@ -56,12 +59,19 @@ namespace net::http::http1 {
 
   // Check the transferred bytes size. If it's zero, then error::end_of_stream
   // will be sent to downstream receiver.
-  inline auto check_received_size(std::size_t sz) noexcept {
+  inline ex::sender auto check_received_size(std::size_t received_size) noexcept {
     return ex::if_then_else(
-      sz != 0, //
-      ex::just(sz),
+      received_size != 0, //
+      ex::just(received_size),
       ex::just_error(std::error_code(error::end_of_stream)));
   };
+
+  inline http_duration infer_timeout(const http_connection& conn) noexcept {
+    if (conn.option.need_keepalive) {
+      return conn.option.keepalive_timeout;
+    }
+    return conn.option.total_recv_timeout;
+  }
 
   // Parse HTTP request uses received flat buffer.
   inline ex::sender auto parse_request(parser_t& parser, flat_buffer& buffer) noexcept {
@@ -73,37 +83,29 @@ namespace net::http::http1 {
   }
 
   // Receive a completed request from given socket.
-  inline ex::sender auto
-    recv_request(const tcp_socket& socket, const http_option& option) noexcept {
-    using state_t = std::tuple< http_request, parser_t, flat_buffer, http_duration>;
-    return ex::just(state_t{}) //
-         | ex::let_value([&](state_t& state) {
-             auto& [request, parser, buffer, timeout] = state;
-             parser.set(&request);
-             if (option.need_keepalive) {
-               timeout = option.keepalive_timeout;
-             } else {
-               timeout = option.total_recv_timeout;
-             }
-             auto scheduler = socket.context_->get_scheduler();
+  inline ex::sender auto recv_request(http_connection&& conn) noexcept {
+    return ex::just(std::move(conn), parser_t{}, infer_timeout(conn))
+         | ex::let_value([](http_connection& conn, auto& parser, http_duration& timeout) {
+             parser.set(&conn.request);
+             auto scheduler = conn.socket.context_->get_scheduler();
 
-             // Update necessary information once receive operation completed.
              auto update_state = [&](auto start_time, auto stop_time, std::size_t recv_size) {
-               request.metric.update_time(start_time, stop_time);
-               request.metric.update_size(recv_size);
-               buffer.commit(recv_size);
+               conn.request.metric.update_time(start_time, stop_time);
+               conn.request.metric.update_size(recv_size);
+               conn.buffer.commit(recv_size);
                timeout -= std::chrono::duration_cast<http_duration>(start_time - stop_time);
              };
 
-             return sio::async::read_some(socket, buffer.wbuffer())                         //
+
+             return sio::async::read_some(conn.socket, conn.buffer.wbuffer())               //
                   | ex::let_value(check_received_size)                                      //
                   | ex::timeout(scheduler, timeout)                                         //
                   | ex::let_stopped([&] { return ex::just_error(detailed_error(parser)); }) //
                   | ex::then(update_state)                                                  //
-                  | ex::let_value([&] { return parse_request(parser, buffer); })            //
+                  | ex::let_value([&] { return parse_request(parser, conn.buffer); })       //
                   | ex::then([&] { return parser.is_completed(); })                         //
                   | ex::repeat_effect_until()                                               //
-                  | ex::then([&] { return std::move(request); });
+                  | ex::then([&] { return std::move(conn); });
            });
   }
 

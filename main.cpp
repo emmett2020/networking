@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#include <thread>
-
 #include <fmt/format.h>
 #include <stdexec/execution.hpp>
 #include <exec/linux/io_uring_context.hpp>

@@ -16,9 +16,11 @@
 
 #pragma once
 
+#include "http/http_common.h"
 #include "utils/execution.h"
-#include "http/v1/http1_request.h"
-#include "http/v1/http1_response.h"
+#include "http/v1/http_connection.h"
+#include "http/http_request.h"
+#include "http/http_response.h"
 
 namespace net::http::http1 {
   inline bool need_keepalive(const http_request& request) noexcept {
@@ -31,17 +33,18 @@ namespace net::http::http1 {
     return false;
   }
 
-  using http_handler = std::function<void(const http_request&, http_response&)>;
+  using http_handler = std::function<void(std::string_view, const http_request&, http_response&)>;
 
   // Handle http request then request response.
-  inline ex::sender auto handle_request(const http_request& request) noexcept {
-    http_response response{};
+  inline ex::sender auto handle_request(http_connection& conn) noexcept {
+    const http_request& request = conn.request;
+    http_response& response = conn.response;
     response.status_code = http_status_code::ok;
     response.version = request.version;
     response.headers = request.headers;
     response.body = request.body;
     response.need_keepalive = need_keepalive(request);
-    return ex::just(std::move(response));
+    return ex::just(std::move(conn));
   }
 
 } // namespace net::http::http1

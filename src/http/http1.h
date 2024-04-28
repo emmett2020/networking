@@ -17,6 +17,5 @@
 #pragma once
 
 #include "http/http_common.h"
-#include "http/v1/http1_request.h"
 #include "http/v1/http1_message_parser.h"
 #include "http/v1/http1_server.h"

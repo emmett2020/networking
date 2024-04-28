@@ -16,53 +16,93 @@
 
 #pragma once
 
-#include "utils/execution.h"
-#include "http/v1/http1_response.h"
+#include <system_error>
+
+#include "http/http_common.h"
+#include "http/http_time.h"
+#include "http/v1/http1_op_recv.h"
+#include "http/http_response.h"
+#include "http/v1/http_connection.h"
 #include "http/http_option.h"
-#include "utils/just_from_expected.h"
 #include "utils/timeout.h"
+#include "utils/execution.h"
 
 namespace net::http::http1 {
 
   using namespace std::chrono_literals;
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
 
+  using valid_ret_t = ex::variant_sender<
+    decltype(ex::just_error(std::declval<std::error_code>())),
+    decltype(ex::just(std::declval<http_connection>()))>;
+
+  // should return variant_sender
+  inline valid_ret_t valid_response(http_connection& conn) noexcept {
+    const http_response& rsp = conn.response;
+    if (rsp.status_code == http_status_code::unknown) {
+      return ex::just_error(std::error_code(error::invalid_response));
+    }
+    if (rsp.version == http_version::unknown) {
+      return ex::just_error(std::error_code(error::invalid_response));
+    }
+    return ex::just(std::move(conn));
+  }
+
+  inline void fill_response_buffer(const http_response& rsp, flat_buffer& buffer) noexcept {
+    // Append response line.
+    if (rsp.version == net::http::http_version::http10) {
+      std::string_view version = to_http_version_string(rsp.version);
+      std::string_view code = to_http_status_code_string(rsp.status_code);
+      std::string_view reason = to_http_status_reason(rsp.status_code);
+      buffer.write(version);
+      buffer.write(" ");
+      buffer.write(code);
+      buffer.write(" ");
+      buffer.write(reason);
+      buffer.write("\r\n");
+    } else {
+      buffer.write(to_http1_response_line(rsp.status_code));
+      buffer.write("\r\n");
+    }
+
+    // Append headers.
+    for (const auto& [name, value]: rsp.headers) {
+      buffer.write(name);
+      buffer.write(": ");
+      buffer.write(value);
+      buffer.write("\r\n");
+    }
+
+    buffer.write("\r\n");
+    // Append body.
+    buffer.write(rsp.body);
+  }
+
   // Send respopnse to given socket.
-  inline ex::sender auto send_response(
-    const tcp_socket& socket,
-    const http_option& option,
-    http_response&& response) noexcept {
-    return ex::let_value(ex::just(std::move(response)), [&](http_response& resp) {
-      return ex::just_from_expected([&] { return resp.to_string(); })
-           | ex::let_value([&](std::string& data) {
-               data += resp.body;
-               auto timeout = option.total_send_timeout;
-               return ex::just(std::make_tuple(std::as_bytes(std::span(data)), timeout))
-                    | ex::let_value([&](auto& state) {
-                        auto& [buffer, timeout] = state;
-                        auto scheduler = socket.context_->get_scheduler();
+  inline ex::sender auto send_response(http_connection& conn) noexcept {
+    fill_response_buffer(conn.response, conn.buffer);
+    auto timeout = conn.option.total_send_timeout;
+    return ex::just(std::move(conn), conn.buffer.rbuffer(), timeout) //
+         | ex::let_value([](http_connection& conn, auto buffer, http_duration& timeout) {
+             auto scheduler = conn.socket.context_->get_scheduler();
 
-                        // Update necessary information once write operation completed.
-                        auto update_state =
-                          [&](auto start_time, auto stop_time, std::size_t write_size) {
-                            resp.metric.update_time(start_time, stop_time);
-                            resp.metric.update_size(write_size);
-                            timeout -= std::chrono::duration_cast<http_duration>(
-                              start_time - stop_time);
-                            assert(write_size <= buffer.size());
-                            buffer = buffer.subspan(write_size);
-                          };
+             // Update necessary information once write operation completed.
+             auto update_state = [&](auto start_time, auto stop_time, std::size_t write_size) {
+               conn.response.metric.update_time(start_time, stop_time);
+               conn.response.metric.update_size(write_size);
+               timeout -= std::chrono::duration_cast<http_duration>(start_time - stop_time);
+               assert(write_size <= buffer.size());
+               buffer = buffer.subspan(write_size);
+             };
 
-                        return sio::async::write_some(socket, buffer)                     //
-                             | ex::timeout(scheduler, timeout)                            //
-                             | ex::stopped_as_error(std::error_code(error::send_timeout)) //
-                             | ex::then(update_state)                                     //
-                             | ex::then([&] { return buffer.empty(); })                   //
-                             | ex::repeat_effect_until()                                  //
-                             | ex::then([&] { return std::move(resp); });
-                      });
-             });
-    });
+             return sio::async::write_some(conn.socket, buffer)                //
+                  | ex::timeout(scheduler, timeout)                            //
+                  | ex::stopped_as_error(std::error_code(error::send_timeout)) //
+                  | ex::then(update_state)                                     //
+                  | ex::then([&] { return buffer.empty(); })                   //
+                  | ex::repeat_effect_until()                                  //
+                  | ex::then([&] { return std::move(conn); });
+           });
   }
 
 } // namespace net::http::http1

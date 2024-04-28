@@ -225,7 +225,7 @@ namespace net::http {
   };
 
   /// @brief Convert given HTTP status code to integer string.
-  constexpr std::string to_http_status_code_string(http_status_code code) noexcept {
+  constexpr std::string_view to_http_status_code_string(http_status_code code) noexcept {
     switch (code) {
     case http_status_code::unknown:
       return "0";
@@ -429,6 +429,8 @@ namespace net::http {
       return "Not Extended";
     case http_status_code::frequency_capping:
       return "Frequency Capped";
+    case http_status_code::script_server_error:
+      return "Script Server Error";
     default:
       return "Unknown Status Code";
     }
@@ -442,6 +444,111 @@ namespace net::http {
       return http_status_code::unknown;
     }
     return magic_enum::enum_cast<http_status_code>(value).value_or(http_status_code::unknown);
+  }
+
+  inline std::string_view to_http1_response_line(http_status_code code) noexcept {
+    switch (code) {
+    case http_status_code::unknown:
+      return "HTTP/1.1 0 Unknown Status";
+    case http_status_code::cont:
+      return "HTTP/1.1 100 Continue";
+    case http_status_code::ok:
+      return "HTTP/1.1 200 OK";
+    case http_status_code::create:
+      return "HTTP/1.1 201 Created";
+    case http_status_code::accepted:
+      return "HTTP/1.1 202 Accepted";
+    case http_status_code::non_authoritative:
+      return "HTTP/1.1 203 Non-Authoritative Information";
+    case http_status_code::no_content:
+      return "HTTP/1.1 204 No Content";
+    case http_status_code::reset_content:
+      return "HTTP/1.1 205 Reset Content";
+    case http_status_code::partial_content:
+      return "HTTP/1.1 206 Partial Content";
+    case http_status_code::multi_status:
+      return "HTTP/1.1 207 Multi-Status";
+    case http_status_code::multiple_choices:
+      return "HTTP/1.1 300 Multiple Choices";
+    case http_status_code::moved_permanently:
+      return "HTTP/1.1 301 Moved Permanently";
+    case http_status_code::moved_temporarily:
+      return "HTTP/1.1 302 Found";
+    case http_status_code::see_other:
+      return "HTTP/1.1 303 See Other";
+    case http_status_code::not_modified:
+      return "HTTP/1.1 304 Not Modified";
+    case http_status_code::use_proxy:
+      return "HTTP/1.1 305 Use Proxy";
+    case http_status_code::temporary_redirect:
+      return "HTTP/1.1 307 Temporary Redirect";
+    case http_status_code::permanent_redirect:
+      return "HTTP/1.1 308 Permanent Redirect";
+    case http_status_code::bad_request:
+      return "HTTP/1.1 400 Bad Request";
+    case http_status_code::unauthorized:
+      return "HTTP/1.1 401 Authorization Required";
+    case http_status_code::payment_required:
+      return "HTTP/1.1 402 Payment Required";
+    case http_status_code::forbidden:
+      return "HTTP/1.1 403 Forbidden";
+    case http_status_code::not_found:
+      return "HTTP/1.1 404 Not Found";
+    case http_status_code::method_not_allowed:
+      return "HTTP/1.1 405 Method Not Allowed";
+    case http_status_code::not_acceptable:
+      return "HTTP/1.1 406 Not Acceptable";
+    case http_status_code::request_timeout:
+      return "HTTP/1.1 408 Request Time-out";
+    case http_status_code::length_required:
+      return "HTTP/1.1 411 Length Required";
+    case http_status_code::precondition_failed:
+      return "HTTP/1.1 412 Precondition Failed";
+    case http_status_code::request_entity_too_large:
+      return "HTTP/1.1 413 Request Entity Too Large";
+    case http_status_code::request_uri_too_large:
+      return "HTTP/1.1 414 Request-URI Too Large";
+    case http_status_code::unsupported_media_type:
+      return "HTTP/1.1 415 Unsupported Media Type";
+    case http_status_code::range_not_satisfiable:
+      return "HTTP/1.1 416 Request Range Not Satisfiable";
+    case http_status_code::expectation_failed:
+      return "HTTP/1.1 417 Expectation Failed";
+    case http_status_code::unprocessable_entity:
+      return "HTTP/1.1 422 Unprocessable Entity";
+    case http_status_code::locked:
+      return "HTTP/1.1 423 Locked";
+    case http_status_code::failed_dependency:
+      return "HTTP/1.1 424 Failed Dependency";
+    case http_status_code::upgrade_required:
+      return "HTTP/1.1 426 Upgrade Required";
+    case http_status_code::unavailable_for_legal_reasons:
+      return "HTTP/1.1 451 Unavailable For Legal Reasons";
+    case http_status_code::internal_server_error:
+      return "HTTP/1.1 500 Internal Error";
+    case http_status_code::not_implemented:
+      return "HTTP/1.1 501 Method Not Implemented";
+    case http_status_code::bad_gateway:
+      return "HTTP/1.1 502 Bad Gateway";
+    case http_status_code::service_unavailable:
+      return "HTTP/1.1 503 Service Temporarily Unavailable";
+    case http_status_code::gateway_timeout:
+      return "HTTP/1.1 504 Gateway Time-out";
+    case http_status_code::version_not_supported:
+      return "HTTP/1.1 505 HTTP Version Not Supported";
+    case http_status_code::variant_also_varies:
+      return "HTTP/1.1 506 Variant Also Negotiates";
+    case http_status_code::insufficient_storage:
+      return "HTTP/1.1 507 Insufficent Storage";
+    case http_status_code::not_extended:
+      return "HTTP/1.1 510 Not Extended";
+    case http_status_code::frequency_capping:
+      return "HTTP/1.1 514 Frequency Capped";
+    case http_status_code::script_server_error:
+      return "HTTP/1.1 544 Script Server Error";
+    default:
+      return "HTTP/1.1 0 Unknown Status Code";
+    }
   }
 
   // TODO: put into net::http::headers namespace then simplify headers name?

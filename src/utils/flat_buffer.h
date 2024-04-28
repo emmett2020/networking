@@ -105,6 +105,11 @@ namespace net::util {
       read_ += n;
     }
 
+    void write(std::string_view data) noexcept {
+      std::memcpy(wbuffer().data(), data.data(), data.size());
+      commit(data.size());
+    }
+
 
    private:
     std::size_t read_{0};

@@ -30,19 +30,21 @@
 #include <sio/ip/tcp.hpp>
 #include <sio/io_concepts.hpp>
 
+#include "exec/linux/io_uring_context.hpp"
 #include "http/http_metric.h"
 #include "http/http_option.h"
 #include "utils/execution.h"
-#include "http/v1/http1_request.h"
+#include "http/http_request.h"
+#include "http/http_response.h"
 #include "utils/flat_buffer.h"
-#include "http/v1/http1_message_parser.h"
-#include "http/v1/http1_response.h"
 #include "utils/if_then_else.h"
 #include "http/http_common.h"
 #include "http/http_error.h"
+#include "http/v1/http1_message_parser.h"
 #include "http/v1/http1_op_recv.h"
 #include "http/v1/http1_op_send.h"
 #include "http/v1/http1_op_handle.h"
+#include "http/v1/http_connection.h"
 
 // TODO: APIs should be constraint by sender_of concept
 // TODO: refine headers
@@ -50,54 +52,6 @@
 namespace net::http::http1 {
 
   using namespace std::chrono_literals;
-  using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
-
-  // A http session is a conversation between client and server.
-  // We use session id to identify a specific unique conversation.
-  struct http_session {
-    // TODO: Just a simple session id factory which must be replaced in future.
-    using id_type = uint64_t;
-
-    static id_type make_session_id() noexcept {
-      static std::atomic_int64_t session_idx{0};
-      ++session_idx;
-      return session_idx.load();
-    }
-
-    tcp_socket socket;
-    id_type id{make_session_id()};
-    std::size_t reuse_cnt = 0;
-    http_option option;
-    http_metric recv_metric;
-    http_metric send_metric;
-  };
-
-  // A http server.
-  struct server {
-    using context_t = ex::io_uring_context;
-    using acceptor_handle_t = sio::io_uring::acceptor_handle<sio::ip::tcp>;
-    using acceptor_t = sio::io_uring::acceptor<sio::ip::tcp>;
-    using socket_t = sio::io_uring::socket_handle<sio::ip::tcp>;
-
-    server(context_t& ctx, std::string_view addr, port_t port) noexcept
-      : server(ctx, sio::ip::endpoint{sio::ip::make_address_v4(addr), port}) {
-    }
-
-    server(context_t& ctx, sio::ip::address addr, port_t port) noexcept
-      : server(ctx, sio::ip::endpoint{addr, port}) {
-    }
-
-    explicit server(context_t& ctx, sio::ip::endpoint endpoint) noexcept
-      : endpoint{endpoint}
-      , context(ctx)
-      , acceptor{&context, sio::ip::tcp::v4(), endpoint} {
-    }
-
-    sio::ip::endpoint endpoint;
-    context_t& context; // NOLINT
-    acceptor_t acceptor;
-    server_metric metric;
-  };
 
   struct handle_error_t {
     template <typename E>
@@ -118,31 +72,31 @@ namespace net::http::http1 {
 
   inline constexpr handle_error_t handle_error{};
 
-  inline ex::sender auto deal_one(server& serv, http_session& session) {
-    auto update_recv_metric = [&](http_request&& req) {
-      serv.metric.total_recv_size += req.metric.size.total;
-      session.recv_metric.size.total += req.metric.size.total;
-      return std::move(req);
-    };
+  inline http_connection&& update_recv_metric(http_connection&& conn) {
+    const http_request& req = conn.request;
+    conn.serv->metric.total_recv_size += req.metric.size.total;
+    conn.recv_metric.size.total += req.metric.size.total;
+    return std::move(conn);
+  }
 
-    auto update_send_metric = [&](http_response&& rsp) {
-      serv.metric.total_recv_size += rsp.metric.size.total;
-      session.recv_metric.size.total += rsp.metric.size.total;
-      return std::move(rsp);
-    };
+  inline http_connection&& update_send_metric(http_connection&& conn) {
+    return std::move(conn);
+  }
 
-    return recv_request(session.socket, session.option) //
-         | ex::then(update_recv_metric)                 //
-         | ex::let_value(handle_request)                //
-         | ex::let_value([&](http_response& resp) {
-             return send_response(session.socket, session.option, std::move(resp));
-           })                           //
-         | ex::then(update_send_metric) //
-         | ex::then([&](http_response&& rsp) {
-             session.option.need_keepalive = rsp.need_keepalive;
-             return !rsp.need_keepalive;
-           })
-         | ex::repeat_effect_until() //
+  inline bool check_keepalive(http_connection&& conn) {
+    conn.option.need_keepalive = conn.need_keepalive;
+    return !conn.need_keepalive;
+  }
+
+  inline ex::sender auto deal_one(http_connection&& conn) {
+    return recv_request(std::move(conn)) //
+         | ex::then(update_recv_metric)  //
+         | ex::let_value(handle_request) //
+         | ex::let_value(valid_response) //
+         | ex::let_value(send_response)  //
+         | ex::then(update_send_metric)  //
+         | ex::then(check_keepalive)     //
+         | ex::repeat_effect_until()     //
          | ex::upon_error(handle_error);
   }
 
@@ -151,8 +105,8 @@ namespace net::http::http1 {
       [&](server::acceptor_handle_t acceptor) noexcept {
         return sio::async::accept(acceptor) //
              | sio::let_value_each([&](server::socket_t socket) {
-                 return ex::just(http_session{.socket = socket}) //
-                      | ex::let_value([&](auto& session) { return deal_one(s, session); });
+                 return ex::just(http_connection{.socket = socket, .serv = &s}) //
+                      | ex::let_value([&](auto& conn) { return deal_one(std::move(conn)); });
                })
              | sio::ignore_all();
       },
