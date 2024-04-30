@@ -18,16 +18,34 @@
 
 #include <sio/io_uring/socket_handle.hpp>
 #include <sio/ip/tcp.hpp>
+#include <unordered_map>
+#include <utility>
 
+#include "http/http_common.h"
 #include "http/http_metric.h"
 #include "http/http_option.h"
 #include "http/http_request.h"
 #include "http/http_response.h"
+#include "magic_enum.hpp"
 #include "utils/flat_buffer.h"
 #include "utils/execution.h"
 
 namespace net::http::http1 {
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
+
+
+  struct http_connection;
+
+  // handlers
+  using http_handler = std::function<void(http_connection&)>;
+
+  struct handler_pattern {
+    std::string url_pattern;
+    http_handler handler;
+  };
+
+  // using handler_map = std::unordered_map<std::string, http_handler>;
+  using handlers_t = std::vector<std::vector<handler_pattern>>;
 
   // A http server.
   struct server {
@@ -48,12 +66,19 @@ namespace net::http::http1 {
       : endpoint{endpoint}
       , context(ctx)
       , acceptor{&context, sio::ip::tcp::v4(), endpoint} {
+      handlers.resize(magic_enum::enum_integer(http_method::unknown) + 1);
+    }
+
+    void register_handler(http_method method, const std::string& url, const http_handler& handler) {
+      int method_idx = magic_enum::enum_integer(method);
+      handlers[method_idx].emplace_back(url, handler);
     }
 
     sio::ip::endpoint endpoint;
     context_t& context; // NOLINT
     acceptor_t acceptor;
     server_metric metric;
+    handlers_t handlers;
   };
 
   struct http_connection {

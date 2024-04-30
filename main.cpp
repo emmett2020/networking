@@ -19,6 +19,11 @@
 #include <exec/linux/io_uring_context.hpp>
 
 #include "http/http1.h"
+#include "http/http_common.h"
+#include "http/http_response.h"
+#include "http/v1/http_connection.h"
+
+using namespace net; // NOLINT
 
 int main() {
   constexpr std::string_view ip = "127.0.0.1";
@@ -26,6 +31,16 @@ int main() {
   fmt::println("start listening on {}:{}", ip, port);
   ex::io_uring_context context;
   net::http::server server{context, ip, port};
+  server.register_handler(http::http_method::get, "/echo", [](http::http1::http_connection& conn) {
+    const http::http_request& req = conn.request;
+    http::http_response& rsp = conn.response;
+    rsp.version = req.version;
+    rsp.status_code = http::http_status_code::ok;
+    rsp.headers = req.headers;
+    rsp.body = req.body;
+  });
+
+
   net::http::start_server(server);
   return 0;
 }

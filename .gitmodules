@@ -23,3 +23,6 @@
 [submodule "thirdparties/expected"]
 	path = thirdparties/expected
 	url = https://github.com/TartanLlama/expected.git
+[submodule "thirdparties/range-v3"]
+	path = thirdparties/range-v3
+	url = git@github.com:ericniebler/range-v3.git

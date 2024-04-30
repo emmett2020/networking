@@ -16,7 +16,11 @@
 
 #pragma once
 
+#include <range/v3/all.hpp>
+#include <stdexcept>
+
 #include "http/http_common.h"
+#include "range/v3/algorithm/max_element.hpp"
 #include "utils/execution.h"
 #include "http/v1/http_connection.h"
 #include "http/http_request.h"
@@ -33,17 +37,48 @@ namespace net::http::http1 {
     return false;
   }
 
-  using http_handler = std::function<void(std::string_view, const http_request&, http_response&)>;
+  inline int score(const std::string& url, const handler_pattern& pattern) {
+    // exactly match
+    if (pattern.url_pattern == url) {
+      return 100;
+    }
+    // the most generalized match
+    if (pattern.url_pattern == "*") {
+      return 1;
+    }
+    // not match
+    return -1;
+  }
 
   // Handle http request then request response.
-  inline ex::sender auto handle_request(http_connection& conn) noexcept {
+  inline ex::sender auto handle_request(http_connection& conn) {
     const http_request& request = conn.request;
     http_response& response = conn.response;
-    response.status_code = http_status_code::ok;
-    response.version = request.version;
-    response.headers = request.headers;
-    response.body = request.body;
-    response.need_keepalive = need_keepalive(request);
+    conn.need_keepalive = need_keepalive(request);
+    int method_idx = magic_enum::enum_integer(request.method);
+    const auto& handlers = conn.serv->handlers[method_idx];
+
+    if (handlers.empty()) {
+      throw std::runtime_error("empty handlers");
+    }
+
+    // Find the most exactly matches pattern.
+    int max_score = -1;
+    int max_idx = -1;
+    for (int i = 0; i < handlers.size(); ++i) {
+      int cur = score(request.path, handlers[i]);
+      if (cur > max_score) {
+        max_score = cur;
+        max_idx = i;
+      }
+    }
+    if (max_idx == -1) {
+      throw std::runtime_error("not found suitable handler");
+    }
+    const auto& pattern = handlers[max_idx];
+
+    // Call user registered callback function.
+    pattern.handler(conn);
     return ex::just(std::move(conn));
   }
 

@@ -34,6 +34,7 @@ add_subdirectory(${THIRDPARTIES_PATH}/nlohmann-json)
 add_subdirectory(${THIRDPARTIES_PATH}/spdlog)
 add_subdirectory(${THIRDPARTIES_PATH}/magic_enum)
 add_subdirectory(${THIRDPARTIES_PATH}/expected)
+add_subdirectory(${THIRDPARTIES_PATH}/range-v3)
 
 # find source files
 file (GLOB_RECURSE SOURCE_LIST ${SOURCE_PATH}/*.cpp)
@@ -45,6 +46,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC STDEXEC::stdexec
                                              nlohmann_json::nlohmann_json
                                              spdlog::spdlog
                                              magic_enum::magic_enum
+                                             range-v3
                                              tl::expected)
 
 option(BUILD_NETWORKING_TEST "build networking test" OFF)
