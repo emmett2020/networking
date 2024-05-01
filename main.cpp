@@ -31,13 +31,24 @@ int main() {
   fmt::println("start listening on {}:{}", ip, port);
   ex::io_uring_context context;
   net::http::server server{context, ip, port};
-  server.register_handler(http::http_method::get, "/echo", [](http::http1::http_connection& conn) {
+
+  server.register_handler(
+    http::http_method::get | http::http_method::post,
+    "/echo",
+    [](http::http1::http_connection& conn) {
+      const http::http_request& req = conn.request;
+      http::http_response& rsp = conn.response;
+      rsp.version = req.version;
+      rsp.status_code = http::http_status_code::ok;
+      rsp.headers = req.headers;
+      rsp.body = req.body;
+    });
+
+  server.register_handler(http::all_methods, "*", [](http::http1::http_connection& conn) {
     const http::http_request& req = conn.request;
     http::http_response& rsp = conn.response;
     rsp.version = req.version;
-    rsp.status_code = http::http_status_code::ok;
-    rsp.headers = req.headers;
-    rsp.body = req.body;
+    rsp.status_code = http::http_status_code::not_found;
   });
 
 

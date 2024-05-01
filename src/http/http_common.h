@@ -93,19 +93,25 @@ namespace net::http {
    * @attention Note that the delete method is not named "delete" because it conflicts with
    * the delete keyword, we name it "del".
   */
-  enum class http_method {
-    get,
-    head,
-    post,
-    put,
-    del,
-    trace,
-    control,
-    purge,
-    options,
-    connect,
-    unknown
+  enum class http_method : unsigned {
+    unknown = 0,
+    head = 1,
+    get = 1 << 1,
+    post = 1 << 2,
+    put = 1 << 3,
+    del = 1 << 4,
+    trace = 1 << 5,
+    control = 1 << 6,
+    purge = 1 << 7,
+    options = 1 << 8,
+    connect = 1 << 9,
   };
+
+  inline unsigned operator|(http::http_method m1, http::http_method m2) {
+    return magic_enum::enum_integer(m1) | magic_enum::enum_integer(m2);
+  }
+
+  constexpr unsigned all_methods = 0x03FF;
 
   /// @brief Convert given HTTP method enum to uppercase string.
   constexpr std::string_view to_http_method_string(http_method method) noexcept {

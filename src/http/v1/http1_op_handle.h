@@ -55,9 +55,13 @@ namespace net::http::http1 {
     const http_request& request = conn.request;
     http_response& response = conn.response;
     conn.need_keepalive = need_keepalive(request);
-    int method_idx = magic_enum::enum_integer(request.method);
-    const auto& handlers = conn.serv->handlers[method_idx];
 
+    auto method_idx = magic_enum::enum_index(request.method);
+    if (!method_idx) {
+      throw std::runtime_error("unknown request method");
+    }
+
+    const auto& handlers = conn.serv->handlers[*method_idx];
     if (handlers.empty()) {
       throw std::runtime_error("empty handlers");
     }

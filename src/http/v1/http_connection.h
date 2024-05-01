@@ -16,11 +16,14 @@
 
 #pragma once
 
+#include <bit>
 #include <sio/io_uring/socket_handle.hpp>
 #include <sio/ip/tcp.hpp>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 
+#include "fmt/core.h"
 #include "http/http_common.h"
 #include "http/http_metric.h"
 #include "http/http_option.h"
@@ -66,12 +69,28 @@ namespace net::http::http1 {
       : endpoint{endpoint}
       , context(ctx)
       , acceptor{&context, sio::ip::tcp::v4(), endpoint} {
-      handlers.resize(magic_enum::enum_integer(http_method::unknown) + 1);
+      constexpr int total = magic_enum::enum_count<http::http_method>();
+      handlers.resize(total);
     }
 
     void register_handler(http_method method, const std::string& url, const http_handler& handler) {
-      int method_idx = magic_enum::enum_integer(method);
-      handlers[method_idx].emplace_back(url, handler);
+      auto method_idx = magic_enum::enum_index(method);
+      if (!method_idx) {
+        throw std::runtime_error("not support http_method");
+      }
+      handlers[*method_idx].emplace_back(url, handler);
+    }
+
+    void register_handler(unsigned methods, const std::string& url, const http_handler& handler) {
+      int method_idx = 0;
+      while (methods > 0) {
+        bool enabled = static_cast<bool>(methods & 0x1);
+        methods = methods >> 1;
+        ++method_idx;
+        if (enabled) {
+          handlers[method_idx].emplace_back(url, handler);
+        }
+      }
     }
 
     sio::ip::endpoint endpoint;
