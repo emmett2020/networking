@@ -16,13 +16,9 @@
 
 #pragma once
 
-#include <range/v3/all.hpp>
-#include <stdexcept>
-
-#include "http/http_common.h"
-#include "range/v3/algorithm/max_element.hpp"
 #include "utils/execution.h"
 #include "http/v1/http_connection.h"
+#include "http/http_common.h"
 #include "http/http_request.h"
 #include "http/http_response.h"
 
@@ -37,23 +33,13 @@ namespace net::http::http1 {
     return false;
   }
 
-  inline int score(const std::string& url, const handler_pattern& pattern) {
-    // exactly match
-    if (pattern.url_pattern == url) {
-      return 100;
-    }
-    // the most generalized match
-    if (pattern.url_pattern == "*") {
-      return 1;
-    }
-    // not match
-    return -1;
+  inline bool matches(const std::string& url, const handler_pattern& pattern) {
+    return pattern.url_pattern == url;
   }
 
   // Handle http request then request response.
   inline ex::sender auto handle_request(http_connection& conn) {
     const http_request& request = conn.request;
-    http_response& response = conn.response;
     conn.need_keepalive = need_keepalive(request);
 
     auto method_idx = magic_enum::enum_index(request.method);
@@ -67,19 +53,16 @@ namespace net::http::http1 {
     }
 
     // Find the most exactly matches pattern.
-    int max_score = -1;
-    int max_idx = -1;
+    int idx = -1;
     for (int i = 0; i < handlers.size(); ++i) {
-      int cur = score(request.path, handlers[i]);
-      if (cur > max_score) {
-        max_score = cur;
-        max_idx = i;
+      if (matches(request.path, handlers[i])) {
+        idx = i;
       }
     }
-    if (max_idx == -1) {
+    if (idx == -1) {
       throw std::runtime_error("not found suitable handler");
     }
-    const auto& pattern = handlers[max_idx];
+    const auto& pattern = handlers[idx];
 
     // Call user registered callback function.
     pattern.handler(conn);

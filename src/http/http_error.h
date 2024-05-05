@@ -73,7 +73,8 @@ namespace net::http {
     send_timeout,
     send_response_timeout_with_nothing,
     send_response_line_and_headers_timeout,
-    send_response_body_timeout
+    send_response_body_timeout,
+    need_impl
   };
 
   class http_error_category : public std::error_category {
@@ -188,6 +189,8 @@ namespace net::http {
         return "send response headers timeout";
       case error::send_response_body_timeout:
         return "send response body timeout";
+      case error::need_impl:
+        return "need implmenet";
       default:
         return "net.http Error";
       }

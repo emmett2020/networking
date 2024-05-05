@@ -629,7 +629,8 @@ namespace net::http::http1 {
      * Parse http request uri. Use the first non-whitespace charater to judge the
      * URI form. That's to say, if the URI starts with '/', the URI form is
      * absolute-path. Otherwise it's absolute-form. You may need to read RFC9112
-     * to get a detailed difference with these two forms.
+     * to get a detailed difference with these two forms. Path must start with
+     * a '/'.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-target
      * @see https://url.spec.whatwg.org
     */
@@ -849,7 +850,7 @@ namespace net::http::http1 {
           return;
         }
         } // switch
-      }   // for
+      } // for
 
       ec = error::need_more;
     }
@@ -859,7 +860,8 @@ namespace net::http::http1 {
      *                       path = token
      * Parse http request path. Http request path is defined as the path and
      * filename in a request. It does not include scheme, host, port or query
-     * string. If no error occurs, the inner request's path field will be filled.
+     * string. But must be started with a '/'. If no error occurs, the inner
+     * request's path field will be filled.
     */
     void parse_path(bytes_buffer& buf, error_code& ec) noexcept {
       for (cpointer p = buf.cur; p < buf.end; ++p) {
