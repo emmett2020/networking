@@ -28,9 +28,8 @@
 #include "net/http/http_response.h"
 #include "net/utils/flat_buffer.h"
 
-namespace net::http::http1 {
+namespace net::http {
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
-
 
   struct http_connection;
 
@@ -105,4 +104,4 @@ namespace net::http::http1 {
   };
 
 
-} // namespace net::http::http1
+} // namespace net::http

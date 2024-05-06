@@ -26,12 +26,12 @@
 #include "net/http/http_time.h"
 #include "net/http/http_request.h"
 #include "net/http/http_error.h"
+#include "net/http/http_server.h"
 #include "net/http/v1/http1_message_parser.h"
-#include "net/http/v1/http_connection.h"
 #include "net/utils/flat_buffer.h"
-#include "net/utils/timeout.h"
 #include "net/utils/if_then_else.h"
 #include "net/utils/just_from_expected.h"
+#include "net/utils/timeout.h"
 
 // TODO: so many inline functions?
 

@@ -22,8 +22,8 @@
 #include "net/http/http_time.h"
 #include "net/http/http_response.h"
 #include "net/http/http_option.h"
+#include "net/http/http_server.h"
 #include "net/http/v1/http1_op_recv.h"
-#include "net/http/v1/http_connection.h"
 
 namespace net::http::http1 {
 

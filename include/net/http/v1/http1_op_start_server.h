@@ -33,10 +33,10 @@
 #include "net/http/http_metric.h"
 #include "net/http/http_option.h"
 #include "net/http/http_request.h"
+#include "net/http/http_server.h"
 #include "net/http/v1/http1_op_recv.h"
 #include "net/http/v1/http1_op_send.h"
 #include "net/http/v1/http1_op_handle.h"
-#include "net/http/v1/http_connection.h"
 
 // TODO: APIs should be constraint by sender_of concept
 // TODO: refine headers
@@ -109,6 +109,5 @@ namespace net::http::http1 {
 } // namespace net::http::http1
 
 namespace net::http {
-  using server = net::http::http1::server;
   using http1::start_server;
 }

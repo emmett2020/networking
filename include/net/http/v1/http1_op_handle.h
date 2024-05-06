@@ -18,7 +18,7 @@
 
 #include <stdexec/execution.hpp>
 
-#include "net/http/v1/http_connection.h"
+#include "net/http/http_server.h"
 #include "net/http/http_common.h"
 #include "net/http/http_request.h"
 

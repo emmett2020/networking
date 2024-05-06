@@ -29,7 +29,7 @@ int main() {
   server.register_handler(
     http::http_method::get | http::http_method::post,
     "/echo",
-    [](http::http1::http_connection& conn) {
+    [](http::http_connection& conn) {
       const http::http_request& req = conn.request;
       http::http_response& rsp = conn.response;
       rsp.version = req.version;
