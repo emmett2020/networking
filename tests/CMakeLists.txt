@@ -5,7 +5,7 @@ add_compile_options(-fno-access-control)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin/tests/)
 
 # TODO: update stdexec catch2 version, so we can use the latest Catch2WithMain
-set (LIBS Catch2::Catch2WithMain fmt::fmt magic_enum tl::expected)
+set (LIBS Catch2::Catch2WithMain fmt::fmt magic_enum tl::expected STDEXEC::stdexec sio::sio)
 
 add_executable(test_string_compare test_string_compare.cpp ${SOURCE_LIST})
 target_link_libraries(test_string_compare PRIVATE ${LIBS})
@@ -13,11 +13,8 @@ target_link_libraries(test_string_compare PRIVATE ${LIBS})
 add_executable(test_http1_message_parser test_http1_message_parser.cpp ${SOURCE_LIST})
 target_link_libraries(test_http1_message_parser PRIVATE ${LIBS})
 
-# add_executable(test_http_server test_http_server.cpp)
-# target_link_libraries(test_http_server PRIVATE ${LIBS} STDEXEC::stdexec sio::sio)
-
-#add_executable(test_then_value test_then_value.cpp)
-#target_link_libraries(test_then_value PRIVATE ${LIBS} STDEXEC::stdexec sio::sio)
+add_executable(test_http_server test_http_server.cpp)
+target_link_libraries(test_http_server PRIVATE ${LIBS})
 
 # add_executable(test_timeout test_timeout.cpp)
 # target_link_libraries(test_timeout PRIVATE ${LIBS} STDEXEC::stdexec sio::sio)

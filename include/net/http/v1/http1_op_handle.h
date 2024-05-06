@@ -16,13 +16,15 @@
 
 #pragma once
 
-#include "utils/execution.h"
-#include "http/v1/http_connection.h"
-#include "http/http_common.h"
-#include "http/http_request.h"
-#include "http/http_response.h"
+#include <stdexec/execution.hpp>
+
+#include "net/http/v1/http_connection.h"
+#include "net/http/http_common.h"
+#include "net/http/http_request.h"
 
 namespace net::http::http1 {
+  namespace ex = stdexec;
+
   inline bool need_keepalive(const http_request& request) noexcept {
     if (request.headers.contains(http_header_connection)) {
       return true;

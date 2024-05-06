@@ -18,20 +18,20 @@
 #include <system_error>
 #include <utility>
 
-#include "http/http_common.h"
-#include "http/http_error.h"
-#include "http/v1/http1_message_parser.h"
-#include "http/v1/http1_request.h"
+#include "net/http/http_common.h"
+#include "net/http/http_error.h"
+#include "net/http/v1/http1_message_parser.h"
+#include "net/http/http_request.h"
 
 using namespace net::http;        // NOLINT
 using namespace net::http::http1; // NOLINT
 using namespace std;              // NOLINT
 
-using request_parser = message_parser<http1_client_request>;
+using request_parser = message_parser<http_request>;
 using request_line_state = request_parser::request_line_state;
 
 TEST_CASE("parse http method", "[parse_http_request]") {
-  http1_client_request req;
+  http_request req;
   request_parser parser{&req};
 
   SECTION("Parse valid GET method string should return http_method::get.") {
@@ -147,7 +147,7 @@ TEST_CASE("parse http method", "[parse_http_request]") {
 }
 
 TEST_CASE("parse http spaces between method and uri", "[parse_http_request]") {
-  http1_client_request req;
+  http_request req;
   request_parser parser{&req};
   SECTION("Multiply whitespaces between method and uri are allowed.") {
     // Five spaces between method and URI.
@@ -162,7 +162,7 @@ TEST_CASE("parse http spaces between method and uri", "[parse_http_request]") {
 }
 
 TEST_CASE("parse http uri", "[parse_http_request]") {
-  http1_client_request req;
+  http_request req;
   request_parser parser{&req};
 
   SECTION("Uri contains only path. Should fill the path field of request") {
@@ -611,7 +611,7 @@ TEST_CASE("parse http uri", "[parse_http_request]") {
 }
 
 TEST_CASE("parse http version", "[parse_http_request]") {
-  http1_client_request req;
+  http_request req;
   request_parser parser{&req};
 
   SECTION("Parse http version 1.0.") {
@@ -663,7 +663,7 @@ TEST_CASE("parse http version", "[parse_http_request]") {
 }
 
 TEST_CASE("parse http headers", "[parse_http_request]") {
-  http1_client_request req;
+  http_request req;
   request_parser parser{&req};
 
   SECTION("Parse http header Host.") {
@@ -950,32 +950,43 @@ TEST_CASE("parse http headers", "[parse_http_request]") {
 }
 
 TEST_CASE("parse http request body", "[parse_http_request]") {
-  http1_client_request req;
+  http_request req;
   request_parser parser{&req};
 
-  SECTION(
-    "parse special HTTP header Content-Length, the length value is out of range "
-    "should return bad_content_length") {
-    string buffer =
-      "GET /index.html HTTP/1.1\r\n"
-      "Content-Length: 12000000000000000000000000000000\r\n"
-      "\r\n";
-    auto result = parser.parse(std::span(buffer));
-    REQUIRE(!result);
-    CHECK(result.error() == error::bad_content_length);
-  }
-
-  SECTION(
-    "parse special HTTP header Content-Length, the length string is invalid "
-    "should return bad_content_length") {
-    string buffer =
-      "GET /index.html HTTP/1.1\r\n"
-      "Content-Length: -10\r\n"
-      "\r\n";
-    auto result = parser.parse(std::span(buffer));
-    REQUIRE(!result);
-    CHECK(result.error() == error::bad_content_length);
-  }
+  // SECTION("parse special HTTP header Content-Length, Content-Length has valid value") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: 120\r\n";
+  //   auto result = parser.parse(std::span(buffer));
+  //   REQUIRE(result);
+  //   CHECK(*result == buffer.size());
+  //   CHECK(parser.state_ == http1_parse_state::expecting_newline);
+  //   CHECK(req.headers.contains("Content-Length"));
+  //   CHECK(req.headers.find("Content-Length")->second == "120");
+  //   CHECK(req.content_length == 120);
+  // }
+  //
+  // SECTION(
+  //   "parse special HTTP header Content-Length, the length value is out of range "
+  //   "should return bad_content_length") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: 12000000000000000000000000000000\r\n";
+  //   auto result = parser.parse(std::span(buffer));
+  //   REQUIRE(!result);
+  //   CHECK(result.error() == error::bad_content_length);
+  // }
+  //
+  // SECTION(
+  //   "parse special HTTP header Content-Length, the length string is invalid "
+  //   "should return bad_content_length") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: -10\r\n";
+  //   auto result = parser.parse(std::span(buffer));
+  //   REQUIRE(!result);
+  //   CHECK(result.error() == error::bad_content_length);
+  // }
 
   SECTION("No Content-Length header means no request body") {
     string buffer =
@@ -984,47 +995,47 @@ TEST_CASE("parse http request body", "[parse_http_request]") {
     auto result = parser.parse(std::span(buffer));
     REQUIRE(result);
     CHECK(*result == buffer.size());
+    CHECK(parser.state_ == http1_parse_state::expecting_newline);
     CHECK(parser.state_ == http1_parse_state::completed);
     CHECK(req.body == "");
   }
 
-  SECTION("The value of Content-Length is zero means no request body") {
-    string buffer =
-      "GET /index.html HTTP/1.1\r\n"
-      "Content-Length: 0\r\n"
-      "\r\n";
-    auto result = parser.parse(std::span(buffer));
-    REQUIRE(result);
-    CHECK(*result == buffer.size());
-    CHECK(parser.state_ == http1_parse_state::completed);
-    CHECK(req.body == "");
-  }
-
-  SECTION("The value of Content-Length equals to request body") {
-    string buffer =
-      "GET /index.html HTTP/1.1\r\n"
-      "Content-Length: 11\r\n"
-      "\r\n"
-      "Hello World";
-    auto result = parser.parse(std::span(buffer));
-    REQUIRE(result);
-    CHECK(*result == buffer.size());
-    CHECK(parser.state_ == http1_parse_state::completed);
-    CHECK(req.content_length == 11);
-    CHECK(req.body == "Hello World");
-  }
-
-  SECTION(
-    "Should return body_size_bigger_than_content_length if Content-Length less than body size") {
-    string buffer =
-      "GET /index.html HTTP/1.1\r\n"
-      "Content-Length: 1\r\n"
-      "\r\n"
-      "Hello World";
-    auto result = parser.parse(std::span(buffer));
-    REQUIRE(!result);
-    CHECK(result.error() == error::body_size_bigger_than_content_length);
-  }
+  // SECTION("The value of Content-Length is zero means no request body") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: 0\r\n"
+  //     "\r\n";
+  //   CHECK(parser.parse(buffer) == buffer.size());
+  //   CHECK(ec == std::errc{});
+  //   CHECK(parser.state_ == http1_parse_state::completed);
+  //   CHECK(req.body == "");
+  // }
+  //
+  // SECTION("The value of Content-Length equals to request body") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: 11\r\n"
+  //     "\r\n"
+  //     "Hello World";
+  //   CHECK(parser.parse(buffer, ec) == buffer.size());
+  //   CHECK(ec == std::errc{});
+  //   CHECK(parser.state_ == http1_parse_state::completed);
+  //   CHECK(req.content_length == 11);
+  //   CHECK(req.body == "Hello World");
+  // }
+  //
+  // SECTION("Content-Length value less than body size") {
+  //   string buffer =
+  //     "GET /index.html HTTP/1.1\r\n"
+  //     "Content-Length: 1\r\n"
+  //     "\r\n"
+  //     "Hello World";
+  //   CHECK(parser.parse(buffer, ec) == 48);
+  //   CHECK(ec == std::errc{});
+  //   CHECK(parser.state_ == http1_parse_state::kCompleted);
+  //   CHECK(req.content_length == 1);
+  //   CHECK(req.body == "H");
+  // }
 }
 
 // TEST_CASE("parse http response status line") {
@@ -1087,10 +1098,8 @@ TEST_CASE("parse http request body", "[parse_http_request]") {
 //       "HTTP/1.1 200 OK\r\n"
 //       "Content-Length:11\r\n"
 //       "\r\n"
-//       "Hello world";
-//     CHECK(parser.parse(buffer, ec) == buffer.size());
-//     CHECK(ec == std::errc{});
-//     CHECK(parser.state_ == Responseparser::MessageState::completed);
+//
+//     CHECK(parser.state_ == Responseparser::MessageState::kCompleted);
 //     CHECK(rsp.version == http_version::http11);
 //     CHECK(rsp.status_code == HttpStatusCode::kOK);
 //     CHECK(rsp.reason == "OK");

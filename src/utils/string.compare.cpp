@@ -15,9 +15,9 @@
  */
 
 
-#include "utils/string_compare.h"
+#include "net/utils/string_compare.h"
 
-namespace net::util {
+namespace net::utils {
 
   bool strcasecmp(std::string_view s1, std::string_view s2) {
     std::size_t size = s1.size();
@@ -45,4 +45,4 @@ namespace net::util {
     return true;
   }
 
-} // namespace net::util
+} // namespace net::utils

@@ -13,25 +13,12 @@
  * limitations under the License.
  */
 #include <catch2/catch_test_macros.hpp>
-#include <span>
-#include <system_error>
-#include "http1/http_common.h"
-#include "http1/http_error.h"
-#include "http1/http_message_parser.h"
-#include "http1/http_request.h"
-#include "http1/http_response.h"
 
-#include "sio/ip/address.hpp"
-#include "sio/ip/endpoint.hpp"
-#include "tcp/tcp_connection.h"
+#include "net/http.h"
 
-using namespace net::http1;  // NOLINT
-using namespace std;         // NOLINT
+using namespace net::http; // NOLINT
+using namespace std;       // NOLINT
 
 TEST_CASE("tcp server") {
   CHECK(true);
-
-  sio::ip::endpoint ep{sio::ip::address_v4::any(), 1080};
-  net::tcp::Server server{ep};
-  server.Run();
 }

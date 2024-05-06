@@ -28,11 +28,11 @@
 
 #include <fmt/core.h>
 
-#include "expected.h"
-#include "buffer.h"
-#include "http/http_common.h"
-#include "http/http_concept.h"
-#include "http/http_error.h"
+#include "net/expected.h"
+#include "net/buffer.h"
+#include "net/http/http_common.h"
+#include "net/http/http_concept.h"
+#include "net/http/http_error.h"
 
 // TODO: Still need to implement and optimize this parser. Write more
 // test case to make this parser robust. This is a long time work, we need to

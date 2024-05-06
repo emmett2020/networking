@@ -19,25 +19,28 @@
 #include <chrono>
 #include <utility>
 
-#include "http/http_option.h"
-#include "http/http_time.h"
-#include "utils/execution.h"
+#include <stdexec/execution.hpp>
+#include <exec/repeat_effect_until.hpp>
 
-#include "http/http_request.h"
-#include "http/http_error.h"
-#include "http/v1/http1_message_parser.h"
-#include "http/v1/http_connection.h"
-#include "utils/flat_buffer.h"
-#include "utils/timeout.h"
-#include "utils/if_then_else.h"
-#include "utils/just_from_expected.h"
+#include "net/http/http_option.h"
+#include "net/http/http_time.h"
+#include "net/http/http_request.h"
+#include "net/http/http_error.h"
+#include "net/http/v1/http1_message_parser.h"
+#include "net/http/v1/http_connection.h"
+#include "net/utils/flat_buffer.h"
+#include "net/utils/timeout.h"
+#include "net/utils/if_then_else.h"
+#include "net/utils/just_from_expected.h"
 
 // TODO: so many inline functions?
 
 namespace net::http::http1 {
   using namespace std::chrono_literals;
+  namespace ex = stdexec;
+
   using parser_t = message_parser<http_request>;
-  using flat_buffer = util::flat_buffer<65535>; // TODO: dynamic_flat_buffer?
+  using flat_buffer = utils::flat_buffer<65535>; // TODO: dynamic_flat_buffer?
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
 
   // Get detailed error by message parser state.
@@ -59,8 +62,8 @@ namespace net::http::http1 {
 
   // Check the transferred bytes size. If it's zero, then error::end_of_stream
   // will be sent to downstream receiver.
-  inline ex::sender auto check_received_size(std::size_t received_size) noexcept {
-    return ex::if_then_else(
+  inline stdexec::sender auto check_received_size(std::size_t received_size) noexcept {
+    return utils::if_then_else(
       received_size != 0, //
       ex::just(received_size),
       ex::just_error(std::error_code(error::end_of_stream)));
@@ -75,7 +78,7 @@ namespace net::http::http1 {
 
   // Parse HTTP request uses received flat buffer.
   inline ex::sender auto parse_request(parser_t& parser, flat_buffer& buffer) noexcept {
-    return ex::just_from_expected([&] { return parser.parse(buffer.rbuffer()); })
+    return net::utils::just_from_expected([&] { return parser.parse(buffer.rbuffer()); })
          | ex::then([&](std::size_t parsed_size) {
              buffer.consume(parsed_size);
              buffer.prepare();
@@ -99,12 +102,12 @@ namespace net::http::http1 {
 
              return sio::async::read_some(conn.socket, conn.buffer.wbuffer())               //
                   | ex::let_value(check_received_size)                                      //
-                  | ex::timeout(scheduler, timeout)                                         //
+                  | net::utils::timeout(scheduler, timeout)                                 //
                   | ex::let_stopped([&] { return ex::just_error(detailed_error(parser)); }) //
                   | ex::then(update_state)                                                  //
                   | ex::let_value([&] { return parse_request(parser, conn.buffer); })       //
                   | ex::then([&] { return parser.is_completed(); })                         //
-                  | ex::repeat_effect_until()                                               //
+                  | exec::repeat_effect_until()                                             //
                   | ex::then([&] { return std::move(conn); });
            });
   }

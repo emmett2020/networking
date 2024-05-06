@@ -16,10 +16,9 @@
 
 #pragma once
 
-#include <stdatomic.h>
 #include <chrono>
 
-#include "http/http_time.h"
+#include "net/http/http_time.h"
 
 namespace net::http {
   struct time_metric {
@@ -56,8 +55,8 @@ namespace net::http {
   };
 
   struct server_metric {
-    atomic_size_t total_recv_size = 0;
-    atomic_size_t total_write_size = 0;
+    size_t total_recv_size = 0;
+    size_t total_write_size = 0;
   };
 
 } // namespace net::http

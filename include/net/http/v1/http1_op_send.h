@@ -18,21 +18,21 @@
 
 #include <system_error>
 
-#include "http/http_common.h"
-#include "http/http_time.h"
-#include "http/v1/http1_op_recv.h"
-#include "http/http_response.h"
-#include "http/v1/http_connection.h"
-#include "http/http_option.h"
-#include "utils/timeout.h"
-#include "utils/execution.h"
+#include "net/http/http_common.h"
+#include "net/http/http_time.h"
+#include "net/http/http_response.h"
+#include "net/http/http_option.h"
+#include "net/http/v1/http1_op_recv.h"
+#include "net/http/v1/http_connection.h"
 
 namespace net::http::http1 {
 
   using namespace std::chrono_literals;
+  namespace ex = stdexec;
+
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
 
-  using valid_ret_t = ex::variant_sender<
+  using valid_ret_t = exec::variant_sender<
     decltype(ex::just_error(std::declval<std::error_code>())),
     decltype(ex::just(std::declval<http_connection>()))>;
 
@@ -96,11 +96,11 @@ namespace net::http::http1 {
              };
 
              return sio::async::write_some(conn.socket, buffer)                //
-                  | ex::timeout(scheduler, timeout)                            //
+                  | net::utils::timeout(scheduler, timeout)                    //
                   | ex::stopped_as_error(std::error_code(error::send_timeout)) //
                   | ex::then(update_state)                                     //
                   | ex::then([&] { return buffer.empty(); })                   //
-                  | ex::repeat_effect_until()                                  //
+                  | exec::repeat_effect_until()                                //
                   | ex::then([&] { return std::move(conn); });
            });
   }

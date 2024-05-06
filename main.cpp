@@ -16,15 +16,15 @@
 
 #include <fmt/format.h>
 
-#include "http/http1.h"
+#include "net/http.h"
 
-using namespace net; // NOLINT
+namespace http = net::http;
 
 int main() {
-  ex::io_uring_context context;
-  sio::ip::address addr = sio::ip::address_v4::any();
+  exec::io_uring_context context;
+  auto addr = sio::ip::address_v4::any();
   constexpr net::http::port_t port = 8080;
-  net::http::server server{context, addr, port};
+  http::server server{context, addr, port};
 
   server.register_handler(
     http::http_method::get | http::http_method::post,

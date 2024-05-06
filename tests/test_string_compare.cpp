@@ -16,22 +16,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include <map>
 
-#include "utils/string_compare.h"
+#include "net/utils/string_compare.h"
 
-using namespace net::util;
+using namespace net::utils;
 
 TEST_CASE("Test strcasecomp could work.", "[strcasecomp]") {
-  CHECK(net::util::strcasecmp("Host", "Host"));
+  CHECK(net::utils::strcasecmp("Host", "Host"));
 }
 
 TEST_CASE("Test case insensitive map could work.", "[case_insensitive_map]") {
-  std::map<std::string, std::string, net::util::case_insensitive_compare> m;
+  std::map<std::string, std::string, net::utils::case_insensitive_compare> m;
   m["key"] = "val";
   CHECK(m.contains("Key"));
 }
 
 TEST_CASE("Test case insensitive multimap could work.", "[case_insensitive_multimap]") {
-  std::multimap<std::string, std::string, net::util::case_insensitive_compare> m;
+  std::multimap<std::string, std::string, net::utils::case_insensitive_compare> m;
   m.emplace("key", "val");
   CHECK(m.contains("Key"));
 }

@@ -20,31 +20,23 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-#include <cstdint>
 #include <exception>
 #include <utility>
 
 
+#include <exec/linux/io_uring_context.hpp>
 #include <sio/sequence/ignore_all.hpp>
 #include <sio/io_uring/socket_handle.hpp>
 #include <sio/ip/tcp.hpp>
 #include <sio/io_concepts.hpp>
 
-#include "exec/linux/io_uring_context.hpp"
-#include "http/http_metric.h"
-#include "http/http_option.h"
-#include "utils/execution.h"
-#include "http/http_request.h"
-#include "http/http_response.h"
-#include "utils/flat_buffer.h"
-#include "utils/if_then_else.h"
-#include "http/http_common.h"
-#include "http/http_error.h"
-#include "http/v1/http1_message_parser.h"
-#include "http/v1/http1_op_recv.h"
-#include "http/v1/http1_op_send.h"
-#include "http/v1/http1_op_handle.h"
-#include "http/v1/http_connection.h"
+#include "net/http/http_metric.h"
+#include "net/http/http_option.h"
+#include "net/http/http_request.h"
+#include "net/http/v1/http1_op_recv.h"
+#include "net/http/v1/http1_op_send.h"
+#include "net/http/v1/http1_op_handle.h"
+#include "net/http/v1/http_connection.h"
 
 // TODO: APIs should be constraint by sender_of concept
 // TODO: refine headers
@@ -96,7 +88,7 @@ namespace net::http::http1 {
          | ex::let_value(send_response)  //
          | ex::then(update_send_metric)  //
          | ex::then(check_keepalive)     //
-         | ex::repeat_effect_until()     //
+         | exec::repeat_effect_until()   //
          | ex::upon_error(handle_error);
   }
 

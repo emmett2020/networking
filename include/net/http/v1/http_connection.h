@@ -16,22 +16,17 @@
 
 #pragma once
 
-#include <bit>
 #include <sio/io_uring/socket_handle.hpp>
 #include <sio/ip/tcp.hpp>
 #include <stdexcept>
-#include <unordered_map>
-#include <utility>
+#include <magic_enum.hpp>
 
-#include "fmt/core.h"
-#include "http/http_common.h"
-#include "http/http_metric.h"
-#include "http/http_option.h"
-#include "http/http_request.h"
-#include "http/http_response.h"
-#include "magic_enum.hpp"
-#include "utils/flat_buffer.h"
-#include "utils/execution.h"
+#include "net/http/http_common.h"
+#include "net/http/http_metric.h"
+#include "net/http/http_option.h"
+#include "net/http/http_request.h"
+#include "net/http/http_response.h"
+#include "net/utils/flat_buffer.h"
 
 namespace net::http::http1 {
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
@@ -51,7 +46,7 @@ namespace net::http::http1 {
 
   // A http server.
   struct server {
-    using context_t = ex::io_uring_context;
+    using context_t = exec::io_uring_context;
     using acceptor_handle_t = sio::io_uring::acceptor_handle<sio::ip::tcp>;
     using acceptor_t = sio::io_uring::acceptor<sio::ip::tcp>;
     using socket_t = sio::io_uring::socket_handle<sio::ip::tcp>;
@@ -106,7 +101,7 @@ namespace net::http::http1 {
     http_request request;
     http_response response;
     server* serv = nullptr;
-    util::flat_buffer<65535> buffer;
+    utils::flat_buffer<65535> buffer;
   };
 
 
