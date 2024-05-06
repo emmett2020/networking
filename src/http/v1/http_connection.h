@@ -47,7 +47,6 @@ namespace net::http::http1 {
     http_handler handler;
   };
 
-  // using handler_map = std::unordered_map<std::string, http_handler>;
   using handlers_t = std::vector<std::vector<handler_pattern>>;
 
   // A http server.
@@ -57,18 +56,14 @@ namespace net::http::http1 {
     using acceptor_t = sio::io_uring::acceptor<sio::ip::tcp>;
     using socket_t = sio::io_uring::socket_handle<sio::ip::tcp>;
 
-    server(context_t& ctx, std::string_view addr, port_t port) noexcept
-      : server(ctx, sio::ip::endpoint{sio::ip::make_address_v4(addr), port}) {
-    }
-
-    server(context_t& ctx, sio::ip::address addr, port_t port) noexcept
+    server(context_t& ctx, const sio::ip::address& addr, port_t port) noexcept
       : server(ctx, sio::ip::endpoint{addr, port}) {
     }
 
-    explicit server(context_t& ctx, sio::ip::endpoint endpoint) noexcept
+    server(context_t& ctx, const sio::ip::endpoint& endpoint) noexcept
       : endpoint{endpoint}
-      , context(ctx)
-      , acceptor{&context, sio::ip::tcp::v4(), endpoint} {
+      , context{ctx}
+      , acceptor{&ctx, endpoint.is_v4() ? sio::ip::tcp::v4() : sio::ip::tcp::v6(), endpoint} {
       constexpr int total = magic_enum::enum_count<http::http_method>();
       handlers.resize(total);
     }
