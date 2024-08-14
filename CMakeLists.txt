@@ -1,61 +1,61 @@
 cmake_minimum_required(VERSION 3.22)
+project(networking VERSION "0.0.1"
+                   DESCRIPTION "A Networking framework based on senders."
+                   LANGUAGES CXX)
 
-# Set compilation related commands.
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+    set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
-set(CXX_STANDARD_REQUIRED TRUE)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
-# Set project properties.
-project(networking VERSION "0.0.1" LANGUAGES CXX)
-message(STATUS "building ${PROJECT_NAME} ${PROJECT_VERSION}......" )
+set(NET_ROOT_PATH      ${PROJECT_SOURCE_DIR})
+set(NET_INCLUDE_PATH   ${PROJECT_SOURCE_DIR}/include)
+set(NET_SOURCE_PATH    ${PROJECT_SOURCE_DIR}/src)
+set(NET_TESTS_PATH     ${PROJECT_SOURCE_DIR}/tests)
+set(NET_EXAMPLES_PATH  ${PROJECT_SOURCE_DIR}/examples)
+set(NET_CMAKE_PATH     ${PROJECT_SOURCE_DIR}/cmake)
 
-# Set some variables to conveniently use the subdirectory path.
-set(NET_INCLUDE_PATH        ${CMAKE_CURRENT_SOURCE_DIR}/include)
-set(NET_SOURCE_PATH         ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(NET_THIRDPARTIES_PATH   ${CMAKE_CURRENT_SOURCE_DIR}/thirdparties)
-set(NET_TESTS_PATH          ${CMAKE_CURRENT_SOURCE_DIR}/tests)
-set(NET_EXAMPLES_PATH       ${CMAKE_CURRENT_SOURCE_DIR}/examples)
-set(NET_CMAKE_PATH          ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+list(APPEND CMAKE_MODULE_PATH "${NET_CMAKE_PATH}")
+include(FetchSIO)
+include(FetchFmt)
+include(FetchNlohmannJson)
+include(FetchSpdlog)
+include(FetchMagicEnum)
+include(FetchExpected)
+include(FetchRangeV3)
 
-# Include necessary directoires.
-include_directories(${NET_INCLUDE_PATH})
+file(GLOB_RECURSE NET_SOURCE_LIST ${NET_SOURCE_PATH}/utils/*.cpp)
+list(APPEND NET_SOURCE_LIST main.cpp)
+add_executable(networking ${NET_SOURCE_LIST})
 
-# WARN: make sure you have commented the catch2 in stdexec since this is conflict with networking now.
-set(BUILD_TESTING OFF)
-set(STDEXEC_BUILD_EXAMPLES OFF)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
-add_subdirectory(${NET_THIRDPARTIES_PATH}/stdexec)
+target_include_directories(networking PRIVATE ${NET_INCLUDE_PATH})
+target_link_libraries(networking PRIVATE
+                      STDEXEC::stdexec
+                      sio::sio
+                      fmt::fmt
+                      nlohmann_json::nlohmann_json
+                      spdlog::spdlog
+                      magic_enum::magic_enum
+                      range-v3
+                      tl::expected)
 
-# TODO: rework senders-io's cmakelist.txt
-set(stdexec_DIR ${CMAKE_SOURCE_DIR}/build/thirdparties/stdexec/)
+# If uses this as top level project, build tests default.
+if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+   set(NET_BUILD_TESTS_DEFAULT ON)
+else()
+   set(NET_BUILD_TESTS_DEFAULT OFF)
+endif()
 
-add_subdirectory(${NET_THIRDPARTIES_PATH}/senders-io)
-add_subdirectory(${NET_THIRDPARTIES_PATH}/fmt)
-add_subdirectory(${NET_THIRDPARTIES_PATH}/nlohmann-json)
-add_subdirectory(${NET_THIRDPARTIES_PATH}/spdlog)
-add_subdirectory(${NET_THIRDPARTIES_PATH}/magic_enum)
-add_subdirectory(${NET_THIRDPARTIES_PATH}/expected)
-add_subdirectory(${NET_THIRDPARTIES_PATH}/range-v3)
-
-# find source files
-file (GLOB_RECURSE SOURCE_LIST ${NET_SOURCE_PATH}/utils/*.cpp)
-add_executable(${PROJECT_NAME} ${NET_SOURCE_LIST} main.cpp)
-
-target_link_libraries(${PROJECT_NAME} PUBLIC STDEXEC::stdexec
-                                             sio::sio
-                                             fmt::fmt
-                                             nlohmann_json::nlohmann_json
-                                             spdlog::spdlog
-                                             magic_enum::magic_enum
-                                             range-v3
-                                             tl::expected)
-
-option(BUILD_NET_TEST "build networking test" OFF)
-if (BUILD_NET_TEST)
-    message(STATUS "building networing unittest...")
-    # !stdexec also use Catch2
-    add_subdirectory(${NET_THIRDPARTIES_PATH}/catch2)
-    add_subdirectory(${NET_TESTS_PATH})
+option(NET_BUILD_TESTS "Build networking tests" ${NET_BUILD_TESTS_DEFAULT})
+option(BUILD_TESTING "A universal option to open/close testing" ${NET_BUILD_TESTS})
+if (BUILD_TESTING)
+   include(CTest)
+   message(STATUS "Building networing unittest...")
+   add_subdirectory(${NET_TESTS_PATH})
 endif()
 
 
