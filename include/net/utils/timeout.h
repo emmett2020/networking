@@ -24,7 +24,7 @@
 #include <exec/timed_scheduler.hpp>
 #include <utility>
 
-// TODO: need a robust implementation according to P2300 revision 8.
+// TODO: need a robust implementation according to P2300 revision 10.
 
 namespace net::utils {
   struct timeout_t {
