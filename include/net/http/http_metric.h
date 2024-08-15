@@ -21,23 +21,25 @@
 #include "net/http/http_time.h"
 
 namespace net::http {
-  struct time_metric {
-    http_timepoint connected;
-    http_timepoint first;
-    http_timepoint last;
-    http_duration max{0};
-    http_duration min{0};
-    http_duration elapsed{0};
-  };
+  namespace detail {
+    struct time_metric {
+      http_timepoint connected;
+      http_timepoint first;
+      http_timepoint last;
+      http_duration max = 0s;
+      http_duration min = 0s;
+      http_duration elapsed = 0s;
+    };
 
-  struct size_metric {
-    std::size_t total = 0;
-    std::size_t count = 0;
-  };
+    struct size_metric {
+      std::size_t total = 0;
+      std::size_t count = 0;
+    };
+  } // namespace detail
 
   struct http_metric {
-    time_metric time;
-    size_metric size;
+    detail::time_metric time;
+    detail::size_metric size;
 
     void update_time(http_timepoint start, http_timepoint stop) noexcept {
       auto elapsed = std::chrono::duration_cast<http_duration>(start - stop);

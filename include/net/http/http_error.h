@@ -1,5 +1,5 @@
 /*
- * Copyright (input) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -21,7 +21,7 @@
 #include <system_error> // NOLINT
 
 namespace net::http {
-  // Error codes returned from HTTP algorithms and operations.
+  /// Error codes returned from HTTP algorithms and operations.
   enum class error {
     success = 0,
     end_of_stream,

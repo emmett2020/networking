@@ -15,57 +15,52 @@
 */
 
 #pragma once
+#include <magic_enum.hpp>
 
 #include <sio/io_uring/socket_handle.hpp>
 #include <sio/ip/tcp.hpp>
-#include <stdexcept>
-#include <magic_enum.hpp>
+#include <sio/ip/udp.hpp>
 
 #include "net/http/http_common.h"
+#include "net/http/http_error.h"
 #include "net/http/http_metric.h"
 #include "net/http/http_option.h"
 #include "net/http/http_request.h"
 #include "net/http/http_response.h"
+#include "net/http/http_handler.h"
 #include "net/utils/flat_buffer.h"
 
 namespace net::http {
   using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
+  using tcp_acceptor_t = sio::io_uring::acceptor<sio::ip::tcp>;
+  using tcp_acceptor_handle_t = sio::io_uring::acceptor_handle<sio::ip::tcp>;
+  using udp_socket = sio::io_uring::socket_handle<sio::ip::udp>;
+  using udp_acceptor_t = sio::io_uring::acceptor<sio::ip::udp>;
+  using udp_acceptor_handle_t = sio::io_uring::acceptor_handle<sio::ip::udp>;
 
   struct http_connection;
 
-  // handlers
-  using http_handler = std::function<void(http_connection&)>;
-
-  struct handler_pattern {
-    std::string url_pattern;
-    http_handler handler;
-  };
-
-  using handlers_t = std::vector<std::vector<handler_pattern>>;
-
   // A http server.
   struct server {
-    using context_t = exec::io_uring_context;
-    using acceptor_handle_t = sio::io_uring::acceptor_handle<sio::ip::tcp>;
-    using acceptor_t = sio::io_uring::acceptor<sio::ip::tcp>;
-    using socket_t = sio::io_uring::socket_handle<sio::ip::tcp>;
+    using execution_context = exec::io_uring_context;
+    using http_handlers = std::vector<std::vector<handler_pattern>>;
 
-    server(context_t& ctx, const sio::ip::address& addr, port_t port) noexcept
+    server(execution_context& ctx, const sio::ip::address& addr, port_t port) noexcept
       : server(ctx, sio::ip::endpoint{addr, port}) {
     }
 
-    server(context_t& ctx, const sio::ip::endpoint& endpoint) noexcept
+    server(execution_context& ctx, const sio::ip::endpoint& endpoint) noexcept
       : endpoint{endpoint}
       , context{ctx}
       , acceptor{&ctx, endpoint.is_v4() ? sio::ip::tcp::v4() : sio::ip::tcp::v6(), endpoint} {
-      constexpr int total = magic_enum::enum_count<http::http_method>();
-      handlers.resize(total);
+      constexpr int total_methods_count = magic_enum::enum_count<http::http_method>();
+      handlers.resize(total_methods_count);
     }
 
     void register_handler(http_method method, const std::string& url, const http_handler& handler) {
       auto method_idx = magic_enum::enum_index(method);
       if (!method_idx) {
-        throw std::runtime_error("not support http_method");
+        throw http_error("unsupport http_method");
       }
       handlers[*method_idx].emplace_back(url, handler);
     }
@@ -73,7 +68,7 @@ namespace net::http {
     void register_handler(unsigned methods, const std::string& url, const http_handler& handler) {
       int method_idx = 0;
       while (methods > 0) {
-        bool enabled = static_cast<bool>(methods & 0x1);
+        auto enabled = static_cast<bool>(methods & 0x1);
         methods = methods >> 1;
         ++method_idx;
         if (enabled) {
@@ -83,10 +78,10 @@ namespace net::http {
     }
 
     sio::ip::endpoint endpoint;
-    context_t& context; // NOLINT
-    acceptor_t acceptor;
+    execution_context& context; // NOLINT
+    tcp_acceptor_t acceptor;
     server_metric metric;
-    handlers_t handlers;
+    http_handlers handlers;
   };
 
   struct http_connection {

@@ -21,9 +21,9 @@
 namespace net::http {
 
   struct http_option {
-    http_duration total_recv_timeout{600s};
-    http_duration keepalive_timeout{120s};
-    http_duration total_send_timeout{600s};
+    http_duration total_recv_timeout = 600s;
+    http_duration keepalive_timeout = 120s;
+    http_duration total_send_timeout = 600s;
     bool need_keepalive = false;
   };
 

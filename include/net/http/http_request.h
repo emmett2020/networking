@@ -24,16 +24,11 @@
 #include "net/utils/string_compare.h"
 
 namespace net::http {
-  // A request could be used while client send to server or server send to client.
   struct http_request {
     using params_t = std::multimap<std::string, std::string>;
     using headers_t = std::multimap<std::string, std::string, utils::case_insensitive_compare>;
-    using metric_t = http_metric;
 
-    static constexpr http_text_encoding text_encoding() noexcept {
-      return http_text_encoding::utf_8;
-    }
-
+    http_text_encoding text_encoding = http_text_encoding::utf_8;
     http_method method = http_method::unknown;
     http_scheme scheme = http_scheme::unknown;
     http_version version = http_version::unknown;

@@ -16,27 +16,18 @@
 
 #pragma once
 
-#include <map>
+#include <functional>
 #include <string>
 
-#include "net/http/http_common.h"
-#include "net/http/http_metric.h"
-#include "net/utils/string_compare.h"
+#include <magic_enum.hpp>
 
 namespace net::http {
-  struct http_response {
-    using headers_t = std::multimap<std::string, std::string, utils::case_insensitive_compare>;
+  struct http_connection;
+  using http_handler = std::function<void(http_connection&)>;
 
-    http_text_encoding text_encoding = http_text_encoding::utf_8;
-    http_version version = http_version::unknown;
-    http_status_code status_code = http_status_code::unknown;
-    std::string reason;
-    std::string body;
-    std::size_t content_length = 0;
-    headers_t headers;
-    http_metric metric;
-    bool need_keepalive = false;
+  struct handler_pattern {
+    std::string url_pattern;
+    http_handler handler;
   };
-
 
 } // namespace net::http

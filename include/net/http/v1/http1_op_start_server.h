@@ -95,9 +95,9 @@ namespace net::http::http1 {
 
   inline void start_server(server& s) noexcept {
     auto handles = sio::async::use_resources(
-      [&](server::acceptor_handle_t acceptor) noexcept {
+      [&](tcp_acceptor_handle_t acceptor) noexcept {
         return sio::async::accept(acceptor) //
-             | sio::let_value_each([&](server::socket_t socket) {
+             | sio::let_value_each([&](tcp_socket socket) {
                  return ex::just(http_connection{.socket = socket, .serv = &s}) //
                       | ex::let_value([&](auto& conn) { return deal_one(std::move(conn)); });
                })
