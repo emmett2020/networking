@@ -30,7 +30,7 @@ namespace net::utils {
 
     constexpr std::size_t zero = 0;
     constexpr std::size_t step = sizeof(std::size_t);
-    constexpr std::size_t mask = 0xDFDFDFDFDFDFDFDFz & ~zero;
+    constexpr std::size_t mask = 0xDFDFDFDFDFDFDFDF & ~zero;
 
     for (; size >= step; p1 += step, p2 += step, size -= step) {
       if (((convert_to_int(p1) ^ convert_to_int(p2)) & mask) != 0) {

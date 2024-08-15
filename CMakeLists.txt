@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 project(networking VERSION "0.0.1"
-                   DESCRIPTION "A Networking framework based on senders."
+                   DESCRIPTION "A networking framework based on senders."
                    LANGUAGES CXX)
 
 if(POLICY CMP0135)
@@ -29,7 +29,7 @@ include(FetchExpected)
 include(FetchRangeV3)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-subobject-linkage")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-shift-count-overflow")
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-shift-count-overflow")
 file(GLOB_RECURSE NET_SOURCE_LIST ${NET_SOURCE_PATH}/utils/*.cpp)
 add_executable(networking ${NET_SOURCE_LIST} ${NET_ROOT_PATH}/main.cpp)
 

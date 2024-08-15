@@ -78,7 +78,7 @@ namespace net::utils {
         throw std::length_error{"buffer overflow"};
       }
       if (rsize > 0) [[likely]] {
-        std::memmove(0, data_.data() + read_, rsize);
+        std::memmove(data_.data(), data_.data() + read_, rsize);
       }
       read_ = 0;
       write_ = read_ + rsize;
