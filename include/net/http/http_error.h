@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <stdexcept>
 #include <string>
 #include <system_error> // NOLINT
 
@@ -214,6 +215,16 @@ namespace net::http {
     static net::http::http_error_category category{};
     return {static_cast<std::underlying_type_t<net::http::error>>(err), category};
   }
+
+  struct http_error : std::runtime_error {
+    explicit http_error(std::string_view message)
+      : std::runtime_error(message.data()) {
+    }
+
+    [[nodiscard]] const char* what() const noexcept override {
+      return std::runtime_error::what();
+    }
+  };
 
 } // namespace net::http
 

@@ -21,7 +21,6 @@
 
 #include <array>
 #include <charconv>
-#include <string>
 #include <string_view>
 #include <magic_enum.hpp>
 
@@ -29,7 +28,6 @@ namespace net::http {
   namespace detail {
     static constexpr std::array<std::string_view, 5> http_versions =
       {"HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3.0", "UNKNOWN_HTTP_VERSION"};
-
   }
 
   enum class http_scheme {
@@ -50,7 +48,7 @@ namespace net::http {
    * @detail Convert given integer number to http version enum.
    * @param total Equals to http major version * 10 + http minor version
   */
-  constexpr http_version to_http_version(int total) {
+  constexpr http_version to_http_version(std::size_t total) {
     if (total == 10) {
       return http_version::http10;
     }
@@ -67,7 +65,7 @@ namespace net::http {
   }
 
   /// @detail Convert given integer numbers to http version enum.
-  constexpr http_version to_http_version(int major, int minor) {
+  constexpr http_version to_http_version(std::size_t major, std::size_t minor) {
     return to_http_version(major * 10 + minor);
   }
 
@@ -106,12 +104,11 @@ namespace net::http {
     options = 1 << 8,
     connect = 1 << 9,
   };
+  constexpr unsigned all_http_methods = 0x03FF;
 
-  inline unsigned operator|(http::http_method m1, http::http_method m2) {
+  constexpr unsigned operator|(http::http_method m1, http::http_method m2) {
     return magic_enum::enum_integer(m1) | magic_enum::enum_integer(m2);
   }
-
-  constexpr unsigned all_methods = 0x03FF;
 
   /// @brief Convert given HTTP method enum to uppercase string.
   constexpr std::string_view to_http_method_string(http_method method) noexcept {
@@ -452,7 +449,7 @@ namespace net::http {
     return magic_enum::enum_cast<http_status_code>(value).value_or(http_status_code::unknown);
   }
 
-  inline std::string_view to_http1_response_line(http_status_code code) noexcept {
+  constexpr std::string_view to_http1_response_line(http_status_code code) noexcept {
     switch (code) {
     case http_status_code::unknown:
       return "HTTP/1.1 0 Unknown Status";
@@ -557,60 +554,54 @@ namespace net::http {
     }
   }
 
-  // TODO: put into net::http::headers namespace then simplify headers name?
-  static constexpr std::string_view http_header_host = "Host";
-  static constexpr std::string_view http_header_content_length = "Content-Length";
-  static constexpr std::string_view http_header_if_modified_since = "If-Modified-Since";
-  static constexpr std::string_view http_header_etag = "Etag";
-  static constexpr std::string_view http_header_accept_encoding = "Accept-Encoding";
-  static constexpr std::string_view http_header_last_modified = "Last-Modified";
-  static constexpr std::string_view http_header_content_range = "Content-Range";
-  static constexpr std::string_view http_header_content_type = "Content-Type";
-  static constexpr std::string_view http_header_transfer_encoding = "Transfer-Encoding";
-  static constexpr std::string_view http_header_content_encoding = "Content-Encoding";
-  static constexpr std::string_view http_header_connection = "Connection";
-  static constexpr std::string_view http_header_range = "Range";
-  static constexpr std::string_view http_header_server = "Server";
-  static constexpr std::string_view http_header_date = "Date";
-  static constexpr std::string_view http_header_location = "Location";
-  static constexpr std::string_view http_header_expect = "Expect";
-  static constexpr std::string_view http_header_cache_control = "Cache-Control";
-  static constexpr std::string_view http_header_cache_tag = "Cache-Tag";
-  static constexpr std::string_view http_header_expires = "Expires";
-  static constexpr std::string_view http_header_referer = "Referer";
-  static constexpr std::string_view http_header_user_agent = "User-Agent";
-  static constexpr std::string_view http_header_cookie = "Cookie";
-  static constexpr std::string_view http_header_x_forwarded_for = "X-Forwarded-For";
-  static constexpr std::string_view http_header_accept_language = "Accept-Language";
-  static constexpr std::string_view http_header_accept_charset = "Accept-Charset";
-  static constexpr std::string_view http_header_accept_ranges = "Accept-Ranges";
-  static constexpr std::string_view http_header_set_cookie = "Set-Cookie";
-  static constexpr std::string_view http_header_via = "Via";
-  static constexpr std::string_view http_header_pragma = "Pragma";
-  static constexpr std::string_view http_header_upgrade = "Upgrade";
-  static constexpr std::string_view http_header_if_none_match = "If-None-Match";
-  static constexpr std::string_view http_header_if_match = "If-Match";
-  static constexpr std::string_view http_header_if_range = "If-Range";
-  static constexpr std::string_view http_header_accept = "Accept";
-  static constexpr std::string_view http_header_age = "Age";
-  static constexpr std::string_view http_header_chunked = "chunked";
-  static constexpr std::string_view http_header_identity = "identity";
-  static constexpr std::string_view http_header_keepalive = "keep-alive";
-  static constexpr std::string_view http_header_close = "close";
+  namespace header {
+    static constexpr std::string_view host = "Host";
+    static constexpr std::string_view content_length = "Content-Length";
+    static constexpr std::string_view if_modified_since = "If-Modified-Since";
+    static constexpr std::string_view etag = "Etag";
+    static constexpr std::string_view accept_encoding = "Accept-Encoding";
+    static constexpr std::string_view last_modified = "Last-Modified";
+    static constexpr std::string_view content_range = "Content-Range";
+    static constexpr std::string_view content_type = "Content-Type";
+    static constexpr std::string_view transfer_encoding = "Transfer-Encoding";
+    static constexpr std::string_view content_encoding = "Content-Encoding";
+    static constexpr std::string_view connection = "Connection";
+    static constexpr std::string_view range = "Range";
+    static constexpr std::string_view server = "Server";
+    static constexpr std::string_view date = "Date";
+    static constexpr std::string_view location = "Location";
+    static constexpr std::string_view expect = "Expect";
+    static constexpr std::string_view cache_control = "Cache-Control";
+    static constexpr std::string_view cache_tag = "Cache-Tag";
+    static constexpr std::string_view expires = "Expires";
+    static constexpr std::string_view referer = "Referer";
+    static constexpr std::string_view user_agent = "User-Agent";
+    static constexpr std::string_view cookie = "Cookie";
+    static constexpr std::string_view x_forwarded_for = "X-Forwarded-For";
+    static constexpr std::string_view accept_language = "Accept-Language";
+    static constexpr std::string_view accept_charset = "Accept-Charset";
+    static constexpr std::string_view accept_ranges = "Accept-Ranges";
+    static constexpr std::string_view set_cookie = "Set-Cookie";
+    static constexpr std::string_view via = "Via";
+    static constexpr std::string_view pragma = "Pragma";
+    static constexpr std::string_view upgrade = "Upgrade";
+    static constexpr std::string_view if_none_match = "If-None-Match";
+    static constexpr std::string_view if_match = "If-Match";
+    static constexpr std::string_view if_range = "If-Range";
+    static constexpr std::string_view accept = "Accept";
+    static constexpr std::string_view age = "Age";
+    static constexpr std::string_view chunked = "chunked";
+    static constexpr std::string_view identity = "identity";
+    static constexpr std::string_view keepalive = "keep-alive";
+    static constexpr std::string_view close = "close";
+  } // namespace header
 
   enum class http_text_encoding {
     ascii,
     utf_8
   };
 
-  enum class http_message_direction {
-    send_to_server,
-    send_to_client,
-    receiver_from_server,
-    receive_from_client,
-  };
-
-  inline std::uint16_t default_port(http_scheme scheme) noexcept {
+  constexpr std::uint16_t default_port(http_scheme scheme) noexcept {
     if (scheme == http_scheme::http) {
       return 80;
     }
@@ -622,6 +613,5 @@ namespace net::http {
 
   // HTTP port type.
   using port_t = std::uint16_t;
-
 
 } // namespace net::http

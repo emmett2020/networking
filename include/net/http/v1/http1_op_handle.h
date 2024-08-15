@@ -17,7 +17,9 @@
 #pragma once
 
 #include <stdexec/execution.hpp>
+#include <utility>
 
+#include "net/http/http_error.h"
 #include "net/http/http_server.h"
 #include "net/http/http_common.h"
 #include "net/http/http_request.h"
@@ -26,7 +28,7 @@ namespace net::http::http1 {
   namespace ex = stdexec;
 
   inline bool need_keepalive(const http_request& request) noexcept {
-    if (request.headers.contains(http_header_connection)) {
+    if (request.headers.contains(header::connection)) {
       return true;
     }
     if (request.version == http_version::http11) {
@@ -39,19 +41,21 @@ namespace net::http::http1 {
     return pattern.url_pattern == url;
   }
 
+  using handle_request_t = decltype(ex::just(std::declval<http_connection>()));
+
   // Handle http request then request response.
-  inline ex::sender auto handle_request(http_connection& conn) {
+  inline handle_request_t handle_request(http_connection& conn) {
     const http_request& request = conn.request;
     conn.need_keepalive = need_keepalive(request);
 
     auto method_idx = magic_enum::enum_index(request.method);
     if (!method_idx) {
-      throw std::runtime_error("unknown request method");
+      throw http_error("unknown request method");
     }
 
     const auto& handlers = conn.serv->handlers[*method_idx];
     if (handlers.empty()) {
-      throw std::runtime_error("empty handlers");
+      throw http_error("empty handler");
     }
 
     // Find the most exactly matches pattern.
@@ -63,7 +67,7 @@ namespace net::http::http1 {
       }
     }
     if (idx == -1) {
-      throw std::runtime_error("not found suitable handler");
+      throw http_error("not found suitable handler");
     }
     const auto& pattern = handlers[idx];
 

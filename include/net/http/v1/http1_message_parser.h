@@ -1325,7 +1325,7 @@ namespace net::http::http1 {
     }
 
     void parse_header_content_length(error_code& ec) noexcept {
-      auto range = message_->headers.equal_range(http_header_content_length);
+      auto range = message_->headers.equal_range(header::content_length);
       auto header_cnt = std::distance(range.first, range.second);
       if (header_cnt > 1) {
         ec = error::multiple_content_length;
