@@ -57,6 +57,7 @@ namespace net::http::http1 {
     case http1_parse_state::body:
       return error::recv_request_body_timeout;
     case http1_parse_state::completed:
+    default:
       return error::success;
     }
   }

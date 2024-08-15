@@ -56,7 +56,8 @@ namespace net::http::http1 {
 
     // Find the most exactly matches pattern.
     int idx = -1;
-    for (int i = 0; i < handlers.size(); ++i) {
+    auto handler_size = static_cast<int>(handlers.size());
+    for (int i = 0; i < handler_size; ++i) {
       if (matches(request.path, handlers[i])) {
         idx = i;
       }

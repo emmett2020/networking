@@ -28,8 +28,9 @@ include(FetchMagicEnum)
 include(FetchExpected)
 include(FetchRangeV3)
 
+# remove subobject-linkage since https://github.com/NVIDIA/stdexec/issues/1143
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-subobject-linkage")
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-shift-count-overflow")
+
 file(GLOB_RECURSE NET_SOURCE_LIST ${NET_SOURCE_PATH}/utils/*.cpp)
 add_executable(networking ${NET_SOURCE_LIST} ${NET_ROOT_PATH}/main.cpp)
 
@@ -58,5 +59,4 @@ if (BUILD_TESTING)
    message(STATUS "Building networing unittest...")
    add_subdirectory(${NET_TESTS_PATH})
 endif()
-
 
