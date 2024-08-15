@@ -25,6 +25,8 @@
 #include "net/http/http_server.h"
 #include "net/http/v1/http1_op_recv.h"
 
+#include <sio/buffer.hpp>
+
 namespace net::http::http1 {
 
   using namespace std::chrono_literals;
@@ -95,12 +97,15 @@ namespace net::http::http1 {
                buffer = buffer.subspan(write_size);
              };
 
-             return sio::async::write_some(conn.socket, buffer)                //
-                  | net::utils::timeout(scheduler, timeout)                    //
-                  | ex::stopped_as_error(std::error_code(error::send_timeout)) //
-                  | ex::then(update_state)                                     //
-                  | ex::then([&] { return buffer.empty(); })                   //
-                  | exec::repeat_effect_until()                                //
+             return sio::async::write_some(
+                      conn.socket,
+                      sio::const_buffer(
+                        conn.buffer.rbuffer().data(), conn.buffer.rbuffer().size())) //
+                  | net::utils::timeout(scheduler, timeout)                          //
+                  | ex::stopped_as_error(std::error_code(error::send_timeout))       //
+                  | ex::then(update_state)                                           //
+                  | ex::then([&] { return buffer.empty(); })                         //
+                  | exec::repeat_effect_until()                                      //
                   | ex::then([&] { return std::move(conn); });
            });
   }

@@ -29,6 +29,7 @@
 #include <sio/io_uring/socket_handle.hpp>
 #include <sio/ip/tcp.hpp>
 #include <sio/io_concepts.hpp>
+#include <sio/net_concepts.hpp>
 
 #include "net/http/http_metric.h"
 #include "net/http/http_option.h"

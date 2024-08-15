@@ -21,6 +21,7 @@
 
 #include <stdexec/execution.hpp>
 #include <exec/repeat_effect_until.hpp>
+#include <sio/buffer.hpp>
 
 #include "net/http/http_option.h"
 #include "net/http/http_time.h"
@@ -100,7 +101,10 @@ namespace net::http::http1 {
              };
 
 
-             return sio::async::read_some(conn.socket, conn.buffer.wbuffer())               //
+             return sio::async::read_some(
+                      conn.socket,
+                      sio::mutable_buffer(
+                        conn.buffer.wbuffer().data(), conn.buffer.wbuffer().size()))        //
                   | ex::let_value(check_received_size)                                      //
                   | net::utils::timeout(scheduler, timeout)                                 //
                   | ex::let_stopped([&] { return ex::just_error(detailed_error(parser)); }) //
