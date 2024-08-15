@@ -31,8 +31,7 @@ include(FetchRangeV3)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-subobject-linkage")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-shift-count-overflow")
 file(GLOB_RECURSE NET_SOURCE_LIST ${NET_SOURCE_PATH}/utils/*.cpp)
-list(APPEND NET_SOURCE_LIST ${NET_ROOT_PATH}/main.cpp)
-add_executable(networking ${NET_SOURCE_LIST})
+add_executable(networking ${NET_SOURCE_LIST} ${NET_ROOT_PATH}/main.cpp)
 
 target_include_directories(networking PRIVATE ${NET_INCLUDE_PATH})
 target_link_libraries(networking PRIVATE
