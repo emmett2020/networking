@@ -46,9 +46,9 @@ namespace net::utils {
     stdexec::__binder_back<timeout_t, Schduler, Dur>
       operator()(Schduler scheduler, Dur timeout) const noexcept {
       return {
+        {scheduler, timeout},
         {},
-        {},
-        {scheduler, timeout}
+        {}
       };
     }
   };

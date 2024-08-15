@@ -28,6 +28,8 @@ include(FetchMagicEnum)
 include(FetchExpected)
 include(FetchRangeV3)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-subobject-linkage")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-shift-count-overflow")
 file(GLOB_RECURSE NET_SOURCE_LIST ${NET_SOURCE_PATH}/utils/*.cpp)
 list(APPEND NET_SOURCE_LIST ${NET_ROOT_PATH}/main.cpp)
 add_executable(networking ${NET_SOURCE_LIST})
