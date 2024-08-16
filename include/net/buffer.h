@@ -18,7 +18,7 @@
 
 #include <span>
 
-namespace net {
-  using const_buffer = std::span<const std::byte>;
-  using mutable_buffer = std::span<std::byte>;
-}
+// namespace net {
+//   using const_buffer = std::span<const std::byte>;
+//   using mutable_buffer = std::span<std::byte>;
+// }

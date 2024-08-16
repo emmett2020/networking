@@ -19,8 +19,10 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
-#include <span>
 #include <stdexcept>
+
+#include <sio/mutable_buffer.hpp>
+#include <sio/const_buffer.hpp>
 
 namespace net::utils {
 
@@ -62,8 +64,8 @@ namespace net::utils {
     }
 
     // Return a constant buffer sequence representing the readable bytes.
-    [[nodiscard]] std::span<const std::byte> rbuffer() const noexcept {
-      return std::span(data_).subspan(read_, readable_size());
+    [[nodiscard]] sio::const_buffer rbuffer() const noexcept {
+      return sio::const_buffer{data_.data() + read_, readable_size()};
     }
 
     // Check requirements and rearrange buffer to get enough contiguous linear writable region if requirements check failed.
@@ -85,8 +87,8 @@ namespace net::utils {
     }
 
     // Return a mutable buffer sequence representing writable bytes.
-    std::span<std::byte> wbuffer() noexcept {
-      return std::span(data_).subspan(write_, writable_size());
+    sio::mutable_buffer wbuffer() noexcept {
+      return sio::mutable_buffer{data_.data() + write_, writable_size()};
     }
 
     // Append writable bytes to the readable bytes.

@@ -102,10 +102,7 @@ namespace net::http::http1 {
              };
 
 
-             return sio::async::read_some(
-                      conn.socket,
-                      sio::mutable_buffer(
-                        conn.buffer.wbuffer().data(), conn.buffer.wbuffer().size()))        //
+             return sio::async::read_some(conn.socket, conn.buffer.wbuffer())
                   | ex::let_value(check_received_size)                                      //
                   | net::utils::timeout(scheduler, timeout)                                 //
                   | ex::let_stopped([&] { return ex::just_error(detailed_error(parser)); }) //

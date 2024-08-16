@@ -94,18 +94,15 @@ namespace net::http::http1 {
                conn.response.metric.update_size(write_size);
                timeout -= std::chrono::duration_cast<http_duration>(start_time - stop_time);
                assert(write_size <= buffer.size());
-               buffer = buffer.subspan(write_size);
+               buffer += write_size;
              };
 
-             return sio::async::write_some(
-                      conn.socket,
-                      sio::const_buffer(
-                        conn.buffer.rbuffer().data(), conn.buffer.rbuffer().size())) //
-                  | net::utils::timeout(scheduler, timeout)                          //
-                  | ex::stopped_as_error(std::error_code(error::send_timeout))       //
-                  | ex::then(update_state)                                           //
-                  | ex::then([&] { return buffer.empty(); })                         //
-                  | exec::repeat_effect_until()                                      //
+             return sio::async::write_some(conn.socket, conn.buffer.rbuffer()) //
+                  | net::utils::timeout(scheduler, timeout)                    //
+                  | ex::stopped_as_error(std::error_code(error::send_timeout)) //
+                  | ex::then(update_state)                                     //
+                  | ex::then([&] { return buffer.empty(); })                   //
+                  | exec::repeat_effect_until()                                //
                   | ex::then([&] { return std::move(conn); });
            });
   }

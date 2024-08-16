@@ -33,6 +33,7 @@
 #include "net/http/http_common.h"
 #include "net/http/http_concept.h"
 #include "net/http/http_error.h"
+#include "sio/const_buffer.hpp"
 
 // TODO: Still need to implement and optimize this parser. Write more
 // test case to make this parser robust. This is a long time work, we need to
@@ -430,10 +431,10 @@ namespace net::http::http1 {
     }
 
     size_expected parse(std::span<const char> buffer) noexcept {
-      return parse(std::as_bytes(buffer));
+      return parse(sio::const_buffer(buffer.data(), buffer.size()));
     }
 
-    size_expected parse(const_buffer buffer) noexcept {
+    size_expected parse(sio::const_buffer buffer) noexcept {
       error_code ec{};
       bytes_buffer buf{buffer.data(), buffer.data() + buffer.size(), buffer.data()};
       while (ec == std::errc()) {
