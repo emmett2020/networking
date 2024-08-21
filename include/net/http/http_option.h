@@ -1,5 +1,5 @@
 /*
- * Copyright (input) 2024 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -16,9 +16,15 @@
 
 #pragma once
 
-#include <span>
+#include "net/http/http_time.h"
 
-namespace net {
-  using const_buffer = std::span<const std::byte>;
-  using mutable_buffer = std::span<std::byte>;
-}
+namespace net::http {
+
+  struct http_option {
+    http_duration total_recv_timeout = 600s;
+    http_duration keepalive_timeout = 120s;
+    http_duration total_send_timeout = 600s;
+    bool need_keepalive = false;
+  };
+
+} // namespace net::http

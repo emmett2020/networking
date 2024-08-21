@@ -16,7 +16,17 @@
 
 #pragma once
 
-#include "http/http_common.h"
-#include "http/v1/http1_request.h"
-#include "http/v1/http1_message_parser.h"
-#include "http/v1/http1_server.h"
+#include "net/http/http_common.h"
+#include "net/http/http_concept.h"
+#include "net/http/http_error.h"
+#include "net/http/http_metric.h"
+#include "net/http/http_option.h"
+#include "net/http/http_request.h"
+#include "net/http/http_response.h"
+#include "net/http/http_time.h"
+#include "net/http/http_server.h"
+#include "net/http/v1/http1_op_handle.h"
+#include "net/http/v1/http1_op_recv.h"
+#include "net/http/v1/http1_op_send.h"
+#include "net/http/v1/http1_op_start_server.h"
+#include "net/http/v1/http1_message_parser.h"

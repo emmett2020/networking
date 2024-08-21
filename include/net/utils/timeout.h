@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -24,9 +24,9 @@
 #include <exec/timed_scheduler.hpp>
 #include <utility>
 
-// TODO: need a robust implementation according to P2300 revision 8.
+// TODO: need a robust implementation according to P2300 revision 10.
 
-namespace ex {
+namespace net::utils {
   struct timeout_t {
     // If sender supports cancellation, no need to pass scheduler to function
     template <stdexec::sender Sender, stdexec::scheduler Scheduler>
@@ -46,9 +46,9 @@ namespace ex {
     stdexec::__binder_back<timeout_t, Schduler, Dur>
       operator()(Schduler scheduler, Dur timeout) const noexcept {
       return {
+        {scheduler, timeout},
         {},
-        {},
-        {scheduler, timeout}
+        {}
       };
     }
   };
@@ -86,4 +86,4 @@ namespace ex {
   //   return 1;
   // }
 
-} // namespace ex
+} // namespace net::utils

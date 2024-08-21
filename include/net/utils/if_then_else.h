@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -12,30 +12,20 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-*/
+ */
 
 #pragma once
 
-// stdexec
 #include <stdexec/execution.hpp>
-
-// exec
 #include <exec/variant_sender.hpp>
-#include <exec/linux/io_uring_context.hpp>
-#include <exec/repeat_effect_until.hpp>
-#include <exec/when_any.hpp>
-#include "exec/timed_scheduler.hpp"
 
-// sio
-#include <sio/io_uring/socket_handle.hpp>
-#include <sio/ip/endpoint.hpp>
-#include <sio/ip/tcp.hpp>
-#include <sio/sequence/ignore_all.hpp>
-#include <sio/sequence/let_value_each.hpp>
-#include <sio/io_concepts.hpp>
-#include <sio/ip/address.hpp>
-
-namespace ex {
-  using namespace stdexec; // NOLINT
-  using namespace exec;    // NOLINT
-};
+namespace net::utils {
+  template <class ThenSender, class ElseSender>
+  exec::variant_sender<ThenSender, ElseSender>
+    if_then_else(bool condition, ThenSender then, ElseSender otherwise) { // NOLINT
+    if (condition) {
+      return then;
+    }
+    return otherwise;
+  }
+}

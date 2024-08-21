@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -21,7 +21,6 @@
 
 #include <array>
 #include <charconv>
-#include <string>
 #include <string_view>
 #include <magic_enum.hpp>
 
@@ -29,7 +28,6 @@ namespace net::http {
   namespace detail {
     static constexpr std::array<std::string_view, 5> http_versions =
       {"HTTP/1.0", "HTTP/1.1", "HTTP/2.0", "HTTP/3.0", "UNKNOWN_HTTP_VERSION"};
-
   }
 
   enum class http_scheme {
@@ -50,7 +48,7 @@ namespace net::http {
    * @detail Convert given integer number to http version enum.
    * @param total Equals to http major version * 10 + http minor version
   */
-  constexpr http_version to_http_version(int total) {
+  constexpr http_version to_http_version(std::size_t total) {
     if (total == 10) {
       return http_version::http10;
     }
@@ -67,7 +65,7 @@ namespace net::http {
   }
 
   /// @detail Convert given integer numbers to http version enum.
-  constexpr http_version to_http_version(int major, int minor) {
+  constexpr http_version to_http_version(std::size_t major, std::size_t minor) {
     return to_http_version(major * 10 + minor);
   }
 
@@ -93,19 +91,24 @@ namespace net::http {
    * @attention Note that the delete method is not named "delete" because it conflicts with
    * the delete keyword, we name it "del".
   */
-  enum class http_method {
-    get,
-    head,
-    post,
-    put,
-    del,
-    trace,
-    control,
-    purge,
-    options,
-    connect,
-    unknown
+  enum class http_method : unsigned {
+    unknown = 0,
+    head = 1,
+    get = 1 << 1,
+    post = 1 << 2,
+    put = 1 << 3,
+    del = 1 << 4,
+    trace = 1 << 5,
+    control = 1 << 6,
+    purge = 1 << 7,
+    options = 1 << 8,
+    connect = 1 << 9,
   };
+  constexpr unsigned all_http_methods = 0x03FF;
+
+  constexpr unsigned operator|(http::http_method m1, http::http_method m2) {
+    return magic_enum::enum_integer(m1) | magic_enum::enum_integer(m2);
+  }
 
   /// @brief Convert given HTTP method enum to uppercase string.
   constexpr std::string_view to_http_method_string(http_method method) noexcept {
@@ -225,7 +228,7 @@ namespace net::http {
   };
 
   /// @brief Convert given HTTP status code to integer string.
-  constexpr std::string to_http_status_code_string(http_status_code code) noexcept {
+  constexpr std::string_view to_http_status_code_string(http_status_code code) noexcept {
     switch (code) {
     case http_status_code::unknown:
       return "0";
@@ -429,6 +432,8 @@ namespace net::http {
       return "Not Extended";
     case http_status_code::frequency_capping:
       return "Frequency Capped";
+    case http_status_code::script_server_error:
+      return "Script Server Error";
     default:
       return "Unknown Status Code";
     }
@@ -444,60 +449,159 @@ namespace net::http {
     return magic_enum::enum_cast<http_status_code>(value).value_or(http_status_code::unknown);
   }
 
-  // TODO: put into net::http::headers namespace then simplify headers name?
-  static constexpr std::string_view http_header_host = "Host";
-  static constexpr std::string_view http_header_content_length = "Content-Length";
-  static constexpr std::string_view http_header_if_modified_since = "If-Modified-Since";
-  static constexpr std::string_view http_header_etag = "Etag";
-  static constexpr std::string_view http_header_accept_encoding = "Accept-Encoding";
-  static constexpr std::string_view http_header_last_modified = "Last-Modified";
-  static constexpr std::string_view http_header_content_range = "Content-Range";
-  static constexpr std::string_view http_header_content_type = "Content-Type";
-  static constexpr std::string_view http_header_transfer_encoding = "Transfer-Encoding";
-  static constexpr std::string_view http_header_content_encoding = "Content-Encoding";
-  static constexpr std::string_view http_header_connection = "Connection";
-  static constexpr std::string_view http_header_range = "Range";
-  static constexpr std::string_view http_header_server = "Server";
-  static constexpr std::string_view http_header_date = "Date";
-  static constexpr std::string_view http_header_location = "Location";
-  static constexpr std::string_view http_header_expect = "Expect";
-  static constexpr std::string_view http_header_cache_control = "Cache-Control";
-  static constexpr std::string_view http_header_cache_tag = "Cache-Tag";
-  static constexpr std::string_view http_header_expires = "Expires";
-  static constexpr std::string_view http_header_referer = "Referer";
-  static constexpr std::string_view http_header_user_agent = "User-Agent";
-  static constexpr std::string_view http_header_cookie = "Cookie";
-  static constexpr std::string_view http_header_x_forwarded_for = "X-Forwarded-For";
-  static constexpr std::string_view http_header_accept_language = "Accept-Language";
-  static constexpr std::string_view http_header_accept_charset = "Accept-Charset";
-  static constexpr std::string_view http_header_accept_ranges = "Accept-Ranges";
-  static constexpr std::string_view http_header_set_cookie = "Set-Cookie";
-  static constexpr std::string_view http_header_via = "Via";
-  static constexpr std::string_view http_header_pragma = "Pragma";
-  static constexpr std::string_view http_header_upgrade = "Upgrade";
-  static constexpr std::string_view http_header_if_none_match = "If-None-Match";
-  static constexpr std::string_view http_header_if_match = "If-Match";
-  static constexpr std::string_view http_header_if_range = "If-Range";
-  static constexpr std::string_view http_header_accept = "Accept";
-  static constexpr std::string_view http_header_age = "Age";
-  static constexpr std::string_view http_header_chunked = "chunked";
-  static constexpr std::string_view http_header_identity = "identity";
-  static constexpr std::string_view http_header_keepalive = "keep-alive";
-  static constexpr std::string_view http_header_close = "close";
+  constexpr std::string_view to_http1_response_line(http_status_code code) noexcept {
+    switch (code) {
+    case http_status_code::unknown:
+      return "HTTP/1.1 0 Unknown Status";
+    case http_status_code::cont:
+      return "HTTP/1.1 100 Continue";
+    case http_status_code::ok:
+      return "HTTP/1.1 200 OK";
+    case http_status_code::create:
+      return "HTTP/1.1 201 Created";
+    case http_status_code::accepted:
+      return "HTTP/1.1 202 Accepted";
+    case http_status_code::non_authoritative:
+      return "HTTP/1.1 203 Non-Authoritative Information";
+    case http_status_code::no_content:
+      return "HTTP/1.1 204 No Content";
+    case http_status_code::reset_content:
+      return "HTTP/1.1 205 Reset Content";
+    case http_status_code::partial_content:
+      return "HTTP/1.1 206 Partial Content";
+    case http_status_code::multi_status:
+      return "HTTP/1.1 207 Multi-Status";
+    case http_status_code::multiple_choices:
+      return "HTTP/1.1 300 Multiple Choices";
+    case http_status_code::moved_permanently:
+      return "HTTP/1.1 301 Moved Permanently";
+    case http_status_code::moved_temporarily:
+      return "HTTP/1.1 302 Found";
+    case http_status_code::see_other:
+      return "HTTP/1.1 303 See Other";
+    case http_status_code::not_modified:
+      return "HTTP/1.1 304 Not Modified";
+    case http_status_code::use_proxy:
+      return "HTTP/1.1 305 Use Proxy";
+    case http_status_code::temporary_redirect:
+      return "HTTP/1.1 307 Temporary Redirect";
+    case http_status_code::permanent_redirect:
+      return "HTTP/1.1 308 Permanent Redirect";
+    case http_status_code::bad_request:
+      return "HTTP/1.1 400 Bad Request";
+    case http_status_code::unauthorized:
+      return "HTTP/1.1 401 Authorization Required";
+    case http_status_code::payment_required:
+      return "HTTP/1.1 402 Payment Required";
+    case http_status_code::forbidden:
+      return "HTTP/1.1 403 Forbidden";
+    case http_status_code::not_found:
+      return "HTTP/1.1 404 Not Found";
+    case http_status_code::method_not_allowed:
+      return "HTTP/1.1 405 Method Not Allowed";
+    case http_status_code::not_acceptable:
+      return "HTTP/1.1 406 Not Acceptable";
+    case http_status_code::request_timeout:
+      return "HTTP/1.1 408 Request Time-out";
+    case http_status_code::length_required:
+      return "HTTP/1.1 411 Length Required";
+    case http_status_code::precondition_failed:
+      return "HTTP/1.1 412 Precondition Failed";
+    case http_status_code::request_entity_too_large:
+      return "HTTP/1.1 413 Request Entity Too Large";
+    case http_status_code::request_uri_too_large:
+      return "HTTP/1.1 414 Request-URI Too Large";
+    case http_status_code::unsupported_media_type:
+      return "HTTP/1.1 415 Unsupported Media Type";
+    case http_status_code::range_not_satisfiable:
+      return "HTTP/1.1 416 Request Range Not Satisfiable";
+    case http_status_code::expectation_failed:
+      return "HTTP/1.1 417 Expectation Failed";
+    case http_status_code::unprocessable_entity:
+      return "HTTP/1.1 422 Unprocessable Entity";
+    case http_status_code::locked:
+      return "HTTP/1.1 423 Locked";
+    case http_status_code::failed_dependency:
+      return "HTTP/1.1 424 Failed Dependency";
+    case http_status_code::upgrade_required:
+      return "HTTP/1.1 426 Upgrade Required";
+    case http_status_code::unavailable_for_legal_reasons:
+      return "HTTP/1.1 451 Unavailable For Legal Reasons";
+    case http_status_code::internal_server_error:
+      return "HTTP/1.1 500 Internal Error";
+    case http_status_code::not_implemented:
+      return "HTTP/1.1 501 Method Not Implemented";
+    case http_status_code::bad_gateway:
+      return "HTTP/1.1 502 Bad Gateway";
+    case http_status_code::service_unavailable:
+      return "HTTP/1.1 503 Service Temporarily Unavailable";
+    case http_status_code::gateway_timeout:
+      return "HTTP/1.1 504 Gateway Time-out";
+    case http_status_code::version_not_supported:
+      return "HTTP/1.1 505 HTTP Version Not Supported";
+    case http_status_code::variant_also_varies:
+      return "HTTP/1.1 506 Variant Also Negotiates";
+    case http_status_code::insufficient_storage:
+      return "HTTP/1.1 507 Insufficent Storage";
+    case http_status_code::not_extended:
+      return "HTTP/1.1 510 Not Extended";
+    case http_status_code::frequency_capping:
+      return "HTTP/1.1 514 Frequency Capped";
+    case http_status_code::script_server_error:
+      return "HTTP/1.1 544 Script Server Error";
+    default:
+      return "HTTP/1.1 0 Unknown Status Code";
+    }
+  }
+
+  namespace header {
+    static constexpr std::string_view host = "Host";
+    static constexpr std::string_view content_length = "Content-Length";
+    static constexpr std::string_view if_modified_since = "If-Modified-Since";
+    static constexpr std::string_view etag = "Etag";
+    static constexpr std::string_view accept_encoding = "Accept-Encoding";
+    static constexpr std::string_view last_modified = "Last-Modified";
+    static constexpr std::string_view content_range = "Content-Range";
+    static constexpr std::string_view content_type = "Content-Type";
+    static constexpr std::string_view transfer_encoding = "Transfer-Encoding";
+    static constexpr std::string_view content_encoding = "Content-Encoding";
+    static constexpr std::string_view connection = "Connection";
+    static constexpr std::string_view range = "Range";
+    static constexpr std::string_view server = "Server";
+    static constexpr std::string_view date = "Date";
+    static constexpr std::string_view location = "Location";
+    static constexpr std::string_view expect = "Expect";
+    static constexpr std::string_view cache_control = "Cache-Control";
+    static constexpr std::string_view cache_tag = "Cache-Tag";
+    static constexpr std::string_view expires = "Expires";
+    static constexpr std::string_view referer = "Referer";
+    static constexpr std::string_view user_agent = "User-Agent";
+    static constexpr std::string_view cookie = "Cookie";
+    static constexpr std::string_view x_forwarded_for = "X-Forwarded-For";
+    static constexpr std::string_view accept_language = "Accept-Language";
+    static constexpr std::string_view accept_charset = "Accept-Charset";
+    static constexpr std::string_view accept_ranges = "Accept-Ranges";
+    static constexpr std::string_view set_cookie = "Set-Cookie";
+    static constexpr std::string_view via = "Via";
+    static constexpr std::string_view pragma = "Pragma";
+    static constexpr std::string_view upgrade = "Upgrade";
+    static constexpr std::string_view if_none_match = "If-None-Match";
+    static constexpr std::string_view if_match = "If-Match";
+    static constexpr std::string_view if_range = "If-Range";
+    static constexpr std::string_view accept = "Accept";
+    static constexpr std::string_view age = "Age";
+    static constexpr std::string_view chunked = "chunked";
+    static constexpr std::string_view identity = "identity";
+    static constexpr std::string_view keepalive = "keep-alive";
+    static constexpr std::string_view close = "close";
+  } // namespace header
 
   enum class http_text_encoding {
     ascii,
     utf_8
   };
 
-  enum class http_message_direction {
-    send_to_server,
-    send_to_client,
-    receiver_from_server,
-    receive_from_client,
-  };
-
-  inline std::uint16_t default_port(http_scheme scheme) noexcept {
+  constexpr std::uint16_t default_port(http_scheme scheme) noexcept {
     if (scheme == http_scheme::http) {
       return 80;
     }
@@ -509,6 +613,5 @@ namespace net::http {
 
   // HTTP port type.
   using port_t = std::uint16_t;
-
 
 } // namespace net::http

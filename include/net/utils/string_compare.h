@@ -21,7 +21,7 @@
 #include <string_view>
 #include <string>
 
-namespace net::util {
+namespace net::utils {
   // This class is used for heterogeneous access.
   struct string_hash {
     using hash_type = std::hash<std::string_view>;
@@ -48,8 +48,11 @@ namespace net::util {
       return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
     } else {
       // 64 bit system
-      return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24) //
-           | (p[4] << 32) | (p[5] << 40) | (p[6] << 48) | (p[7] << 56);
+      // The static_cast used here is to ensure literal is also 64 bits otherwise
+      // will result in left shift count >= width of type
+      return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24)
+           | (static_cast<std::size_t>(p[4]) << 32) | (static_cast<std::size_t>(p[5]) << 40)
+           | (static_cast<std::size_t>(p[6]) << 48) | (static_cast<std::size_t>(p[7]) << 56);
     }
   }
 
@@ -76,4 +79,4 @@ namespace net::util {
   };
 
 
-} // namespace net::util
+} // namespace net::utils

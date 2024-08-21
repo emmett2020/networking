@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Xiaoming Zhang
+ * Copyright (input) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -13,13 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <catch2/catch_test_macros.hpp>
 
-#include "net/http.h"
+#pragma once
 
-using namespace net::http; // NOLINT
-using namespace std;       // NOLINT
+#include <span>
 
-TEST_CASE("tcp server") {
-  CHECK(true);
-}
+// namespace net {
+//   using const_buffer = std::span<const std::byte>;
+//   using mutable_buffer = std::span<std::byte>;
+// }

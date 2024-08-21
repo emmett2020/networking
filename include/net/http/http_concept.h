@@ -1,5 +1,5 @@
 /*
- * Copyright (input) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "http/http_common.h"
+#include "net/http/http_common.h"
 
 namespace net::http {
   template <typename...>
@@ -36,7 +36,6 @@ namespace net::http {
 
   template <typename T>
   concept http1_request_concept = requires(T& t) {
-    { T::direction() } -> std::convertible_to<http_message_direction>;
     { std::convertible_to<decltype(t.uri), std::string> };
     { std::convertible_to<decltype(t.host), std::string> };
     { std::convertible_to<decltype(t.path), std::string> };
@@ -60,14 +59,5 @@ namespace net::http {
 
   template <typename T>
   concept http1_message_concept = http1_response_concept<T> || http1_request_concept<T>;
-
-  template <typename T>
-  concept http1_server_concept = always_true_implement_later<T>;
-
-  template <typename T>
-  concept http1_socket_concept = always_true_implement_later<T>;
-
-  template <typename T>
-  concept socket_buffer_concept = always_true_implement_later<T>;
 
 } // namespace net::http

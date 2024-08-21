@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -12,20 +12,22 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
+*/
 
 #pragma once
 
-#include <stdexec/execution.hpp>
-#include <exec/variant_sender.hpp>
+#include <functional>
+#include <string>
 
-namespace ex {
-  template <class ThenSender, class ElseSender>
-  exec::variant_sender<ThenSender, ElseSender>
-    if_then_else(bool condition, ThenSender then, ElseSender otherwise) { // NOLINT
-    if (condition) {
-      return then;
-    }
-    return otherwise;
-  }
-}
+#include <magic_enum.hpp>
+
+namespace net::http {
+  struct http_connection;
+  using http_handler = std::function<void(http_connection&)>;
+
+  struct handler_pattern {
+    std::string url_pattern;
+    http_handler handler;
+  };
+
+} // namespace net::http

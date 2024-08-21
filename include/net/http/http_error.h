@@ -1,5 +1,5 @@
 /*
- * Copyright (input) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -16,11 +16,12 @@
 
 #pragma once
 
+#include <stdexcept>
 #include <string>
 #include <system_error> // NOLINT
 
 namespace net::http {
-  // Error codes returned from HTTP algorithms and operations.
+  /// Error codes returned from HTTP algorithms and operations.
   enum class error {
     success = 0,
     end_of_stream,
@@ -73,7 +74,8 @@ namespace net::http {
     send_timeout,
     send_response_timeout_with_nothing,
     send_response_line_and_headers_timeout,
-    send_response_body_timeout
+    send_response_body_timeout,
+    need_impl
   };
 
   class http_error_category : public std::error_category {
@@ -110,14 +112,20 @@ namespace net::http {
         return "bad line ending";
       case error::empty_method:
         return "empty method";
+      case error::unknown_method:
+        return "unknown method";
       case error::bad_method:
         return "bad method";
       case error::bad_uri:
         return "bad uri";
       case error::bad_scheme:
         return "bad scheme";
+      case error::empty_host:
+        return "empty host";
       case error::bad_host:
         return "bad host";
+      case error::too_big_port:
+        return "too big port";
       case error::bad_port:
         return "bad port";
       case error::bad_path:
@@ -126,6 +134,8 @@ namespace net::http {
         return "bad params";
       case error::bad_version:
         return "bad version";
+      case error::unknown_status:
+        return "unknown status";
       case error::bad_status:
         return "bad status";
       case error::bad_reason:
@@ -143,13 +153,17 @@ namespace net::http {
       case error::bad_content_length:
         return "bad Content-Length";
       case error::bad_transfer_encoding:
-        return "bad Transfer-Encoding";
+        return "bad transfer encoding";
+      case error::body_size_bigger_than_content_length:
+        return "body size bigger than content length";
       case error::bad_chunk:
         return "bad chunk";
       case error::bad_chunk_extension:
         return "bad chunk extension";
       case error::bad_obs_fold:
         return "bad obs-fold";
+      case error::empty_content_length:
+        return "empty content length";
       case error::multiple_content_length:
         return "multiple Content-Length";
       case error::stale_parser:
@@ -176,6 +190,8 @@ namespace net::http {
         return "send response headers timeout";
       case error::send_response_body_timeout:
         return "send response body timeout";
+      case error::need_impl:
+        return "need implmenet";
       default:
         return "net.http Error";
       }
@@ -199,6 +215,16 @@ namespace net::http {
     static net::http::http_error_category category{};
     return {static_cast<std::underlying_type_t<net::http::error>>(err), category};
   }
+
+  struct http_error : std::runtime_error {
+    explicit http_error(std::string_view message)
+      : std::runtime_error(message.data()) {
+    }
+
+    [[nodiscard]] const char* what() const noexcept override {
+      return std::runtime_error::what();
+    }
+  };
 
 } // namespace net::http
 

@@ -13,13 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <catch2/catch_test_macros.hpp>
 
-#include "net/http.h"
+#pragma once
 
-using namespace net::http; // NOLINT
-using namespace std;       // NOLINT
+#include <chrono>
 
-TEST_CASE("tcp server") {
-  CHECK(true);
+namespace net::http {
+  using namespace std::chrono_literals;
+  using http_duration = std::chrono::microseconds;
+  using http_timepoint = std::chrono::time_point<std::chrono::system_clock>;
+
+  static constexpr auto unlimited_timeout = http_duration::max();
 }

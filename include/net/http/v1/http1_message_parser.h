@@ -1,5 +1,5 @@
 /*
- * Copyright (input) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -28,11 +28,12 @@
 
 #include <fmt/core.h>
 
-#include "expected.h"
-#include "buffer.h"
-#include "http/http_common.h"
-#include "http/http_concept.h"
-#include "http/http_error.h"
+#include "net/expected.h"
+#include "net/buffer.h"
+#include "net/http/http_common.h"
+#include "net/http/http_concept.h"
+#include "net/http/http_error.h"
+#include "sio/const_buffer.hpp"
 
 // TODO: Still need to implement and optimize this parser. Write more
 // test case to make this parser robust. This is a long time work, we need to
@@ -397,6 +398,8 @@ namespace net::http::http1 {
     using cpointer = const byte_t*;
 
    public:
+    using message_t = Message;
+
     explicit message_parser(Message* message = nullptr) noexcept
       : message_(message) {
       inner_name_.reserve(8192);
@@ -428,10 +431,10 @@ namespace net::http::http1 {
     }
 
     size_expected parse(std::span<const char> buffer) noexcept {
-      return parse(std::as_bytes(buffer));
+      return parse(sio::const_buffer(buffer.data(), buffer.size()));
     }
 
-    size_expected parse(const_buffer buffer) noexcept {
+    size_expected parse(sio::const_buffer buffer) noexcept {
       error_code ec{};
       bytes_buffer buf{buffer.data(), buffer.data() + buffer.size(), buffer.data()};
       while (ec == std::errc()) {
@@ -627,7 +630,8 @@ namespace net::http::http1 {
      * Parse http request uri. Use the first non-whitespace charater to judge the
      * URI form. That's to say, if the URI starts with '/', the URI form is
      * absolute-path. Otherwise it's absolute-form. You may need to read RFC9112
-     * to get a detailed difference with these two forms.
+     * to get a detailed difference with these two forms. Path must start with
+     * a '/'.
      * @see https://datatracker.ietf.org/doc/html/rfc9112#name-request-target
      * @see https://url.spec.whatwg.org
     */
@@ -847,7 +851,7 @@ namespace net::http::http1 {
           return;
         }
         } // switch
-      }   // for
+      } // for
 
       ec = error::need_more;
     }
@@ -857,7 +861,8 @@ namespace net::http::http1 {
      *                       path = token
      * Parse http request path. Http request path is defined as the path and
      * filename in a request. It does not include scheme, host, port or query
-     * string. If no error occurs, the inner request's path field will be filled.
+     * string. But must be started with a '/'. If no error occurs, the inner
+     * request's path field will be filled.
     */
     void parse_path(bytes_buffer& buf, error_code& ec) noexcept {
       for (cpointer p = buf.cur; p < buf.end; ++p) {
@@ -1321,7 +1326,7 @@ namespace net::http::http1 {
     }
 
     void parse_header_content_length(error_code& ec) noexcept {
-      auto range = message_->headers.equal_range(http_header_content_length);
+      auto range = message_->headers.equal_range(header::content_length);
       auto header_cnt = std::distance(range.first, range.second);
       if (header_cnt > 1) {
         ec = error::multiple_content_length;

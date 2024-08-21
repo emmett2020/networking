@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -16,36 +16,33 @@
 
 #pragma once
 
-#include <cstdint>
 #include <chrono>
 
-namespace net::http {
-  template <typename Tp, typename Dur>
-  struct time_metric {
-    using duration_t = Dur;
-    using timepoint_t = Tp;
-    timepoint_t connected{};
-    timepoint_t first{};
-    timepoint_t last{};
-    duration_t max{0};
-    duration_t min{0};
-    duration_t elapsed{0};
-  };
+#include "net/http/http_time.h"
 
-  struct size_metric {
-    std::size_t total = 0;
-    std::size_t count = 0;
-  };
+namespace net::http {
+  namespace detail {
+    struct time_metric {
+      http_timepoint connected;
+      http_timepoint first;
+      http_timepoint last;
+      http_duration max = 0s;
+      http_duration min = 0s;
+      http_duration elapsed = 0s;
+    };
+
+    struct size_metric {
+      std::size_t total = 0;
+      std::size_t count = 0;
+    };
+  } // namespace detail
 
   struct http_metric {
-    using timepoint_t = std::chrono::time_point<std::chrono::system_clock>;
-    using duration_t = std::chrono::seconds;
+    detail::time_metric time;
+    detail::size_metric size;
 
-    time_metric<timepoint_t, duration_t> time;
-    size_metric size;
-
-    void update_time(timepoint_t start, timepoint_t stop) noexcept {
-      auto elapsed = std::chrono::duration_cast<duration_t>(start - stop);
+    void update_time(http_timepoint start, http_timepoint stop) noexcept {
+      auto elapsed = std::chrono::duration_cast<http_duration>(start - stop);
       if (time.first.time_since_epoch().count() == 0) {
         time.first = start;
       }
@@ -57,6 +54,11 @@ namespace net::http {
       size.total += sz;
       size.count += 1;
     }
+  };
+
+  struct server_metric {
+    size_t total_recv_size = 0;
+    size_t total_write_size = 0;
   };
 
 } // namespace net::http

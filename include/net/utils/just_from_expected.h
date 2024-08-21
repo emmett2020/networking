@@ -19,7 +19,7 @@
 #include <stdexec/execution.hpp>
 #include <exec/variant_sender.hpp>
 
-namespace ex {
+namespace net::utils {
   // NOTE: std::expected works well with std::execution::just and std::execution::just_error.
 
   // TODO: add just_from_expected(std::expected exp) overload function.
@@ -32,11 +32,11 @@ namespace ex {
     auto ret = std::forward<Func>(func)();
     using ret_t = exec::variant_sender<
       decltype(stdexec::just(ret.value())), //
-      decltype(stdexec::just_error(ret.error()))>;
+      decltype(stdexec::just_error(std::error_code(ret.error())))>;
     if (ret.has_value()) {
       return ret_t(stdexec::just(ret.value()));
     }
-    return ret_t(stdexec::just_error(ret.error()));
+    return ret_t(stdexec::just_error(std::error_code(ret.error())));
   }
 
-} // namespace ex
+} // namespace net::utils

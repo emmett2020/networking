@@ -19,10 +19,12 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
-#include <span>
 #include <stdexcept>
 
-namespace net::util {
+#include <sio/mutable_buffer.hpp>
+#include <sio/const_buffer.hpp>
+
+namespace net::utils {
 
   /*
  *
@@ -62,8 +64,8 @@ namespace net::util {
     }
 
     // Return a constant buffer sequence representing the readable bytes.
-    [[nodiscard]] std::span<const std::byte> rbuffer() const noexcept {
-      return std::span(data_).subspan(read_, readable_size());
+    [[nodiscard]] sio::const_buffer rbuffer() const noexcept {
+      return sio::const_buffer{data_.data() + read_, readable_size()};
     }
 
     // Check requirements and rearrange buffer to get enough contiguous linear writable region if requirements check failed.
@@ -78,15 +80,15 @@ namespace net::util {
         throw std::length_error{"buffer overflow"};
       }
       if (rsize > 0) [[likely]] {
-        std::memmove(0, data_.data() + read_, rsize);
+        std::memmove(data_.data(), data_.data() + read_, rsize);
       }
       read_ = 0;
       write_ = read_ + rsize;
     }
 
     // Return a mutable buffer sequence representing writable bytes.
-    std::span<std::byte> wbuffer() noexcept {
-      return std::span(data_).subspan(write_, writable_size());
+    sio::mutable_buffer wbuffer() noexcept {
+      return sio::mutable_buffer{data_.data() + write_, writable_size()};
     }
 
     // Append writable bytes to the readable bytes.
@@ -105,6 +107,11 @@ namespace net::util {
       read_ += n;
     }
 
+    void write(std::string_view data) noexcept {
+      std::memcpy(wbuffer().data(), data.data(), data.size());
+      commit(data.size());
+    }
+
 
    private:
     std::size_t read_{0};
@@ -112,4 +119,4 @@ namespace net::util {
     std::array<std::byte, Capacity> data_{};
   };
 
-} // namespace net::util
+} // namespace net::utils

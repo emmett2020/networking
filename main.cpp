@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Xiaoming Zhang
+ * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -14,20 +14,31 @@
  * limitations under the License.
  */
 
-#include <thread>
-
 #include <fmt/format.h>
-#include <stdexec/execution.hpp>
-#include <exec/linux/io_uring_context.hpp>
 
-#include "http/http1.h"
+#include "net/http.h"
+
+namespace http = net::http;
 
 int main() {
-  constexpr std::string_view ip = "127.0.0.1";
+  exec::io_uring_context context;
+  auto addr = sio::ip::address_v4::any();
   constexpr net::http::port_t port = 8080;
-  fmt::println("start listening on {}:{}", ip, port);
-  ex::io_uring_context context;
-  net::http::server server{context, ip, port};
+  http::server server{context, addr, port};
+
+  server.register_handler(
+    http::http_method::get | http::http_method::post,
+    "/echo",
+    [](http::http_connection& conn) {
+      const http::http_request& req = conn.request;
+      http::http_response& rsp = conn.response;
+      rsp.version = req.version;
+      rsp.status_code = http::http_status_code::ok;
+      rsp.headers = req.headers;
+      rsp.body = req.body;
+    });
+
+  fmt::println("start listening on {}:{}", addr.to_string(), port);
   net::http::start_server(server);
   return 0;
 }
